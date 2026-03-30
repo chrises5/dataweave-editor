@@ -1,7 +1,16 @@
 import React from 'react'
 import { Editor } from '@monaco-editor/react'
+import type { Monaco } from '@monaco-editor/react'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
+import { DATAWEAVE_LANGUAGE_ID, dwLanguageConfig, dwMonarchTokens } from '../lib/dataweave-lang'
+
+function registerDataWeaveLanguage(monaco: Monaco): void {
+  if (monaco.languages.getLanguages().some((l) => l.id === DATAWEAVE_LANGUAGE_ID)) return
+  monaco.languages.register({ id: DATAWEAVE_LANGUAGE_ID, extensions: ['.dwl', '.dw'] })
+  monaco.languages.setLanguageConfiguration(DATAWEAVE_LANGUAGE_ID, dwLanguageConfig)
+  monaco.languages.setMonarchTokensProvider(DATAWEAVE_LANGUAGE_ID, dwMonarchTokens)
+}
 
 export function ScriptPanel(): React.JSX.Element {
   const script = useEditorStore((s) => s.script)
@@ -25,7 +34,8 @@ export function ScriptPanel(): React.JSX.Element {
       <div className="flex-1">
         <Editor
           height="100%"
-          defaultLanguage="plaintext"
+          defaultLanguage={DATAWEAVE_LANGUAGE_ID}
+          beforeMount={registerDataWeaveLanguage}
           value={script}
           onChange={(val) => setScript(val ?? '')}
           options={{
