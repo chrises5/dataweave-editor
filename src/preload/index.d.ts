@@ -20,6 +20,7 @@ export interface ElectronAPI {
   execute: (payload: ExecutePayload) => Promise<DwResult>
   onRun: (cb: () => void) => () => void
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>
+  readFile: (filePath: string) => Promise<string>
 }
 
 declare global {

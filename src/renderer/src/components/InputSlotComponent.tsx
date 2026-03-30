@@ -38,7 +38,8 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
     if (!result.canceled && result.filePaths.length > 0) {
       const filePath = result.filePaths[0]
       const fileName = filePath.split('/').pop() ?? filePath
-      updateInput(slot.id, { filePath, fileName, content: '' })
+      const content = await window.api.readFile(filePath)
+      updateInput(slot.id, { filePath, fileName, content })
     }
   }
 
@@ -77,6 +78,16 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
         <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleLoadFile}>
           Load File
         </Button>
+        {slot.filePath && (
+          <>
+            <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={slot.fileName}>
+              {slot.fileName}
+            </span>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleClearFile}>
+              Clear
+            </Button>
+          </>
+        )}
         {canRemove && (
           <Button
             variant="ghost"
@@ -89,33 +100,23 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
         )}
       </div>
 
-      {/* Content area: Monaco editor OR file indicator */}
+      {/* Content area: Monaco editor (always shown) */}
       <div className="flex-1">
-        {slot.filePath ? (
-          <div className="flex flex-col items-center justify-center h-full gap-2 text-sm text-muted-foreground">
-            <span>File loaded:</span>
-            <span className="font-mono text-xs font-semibold">{slot.fileName}</span>
-            <Button variant="outline" size="sm" className="text-xs" onClick={handleClearFile}>
-              Clear File
-            </Button>
-          </div>
-        ) : (
-          <Editor
-            height="100%"
-            language={editorLanguage}
-            value={slot.content}
-            onChange={(val) => updateInput(slot.id, { content: val ?? '' })}
-            options={{
-              minimap: { enabled: false },
-              automaticLayout: true,
-              fontSize: 13,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              scrollBeyondLastLine: false,
-              wordWrap: 'on',
-              tabSize: 2,
-            }}
-          />
-        )}
+        <Editor
+          height="100%"
+          language={editorLanguage}
+          value={slot.content}
+          onChange={(val) => updateInput(slot.id, { content: val ?? '' })}
+          options={{
+            minimap: { enabled: false },
+            automaticLayout: true,
+            fontSize: 13,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+            scrollBeyondLastLine: false,
+            wordWrap: 'on',
+            tabSize: 2,
+          }}
+        />
       </div>
     </div>
   )

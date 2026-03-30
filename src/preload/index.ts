@@ -10,5 +10,6 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.removeListener('shortcut:run', listener)
     }
   },
-  openFile: () => ipcRenderer.invoke('dialog:openFile')
+  openFile: () => ipcRenderer.invoke('dialog:openFile'),
+  readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath)
 })

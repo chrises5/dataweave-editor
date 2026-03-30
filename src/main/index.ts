@@ -20,6 +20,11 @@ ipcMain.handle('dialog:openFile', async () => {
   return result
 })
 
+ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
+  const { readFile } = await import('fs/promises')
+  return readFile(filePath, 'utf8')
+})
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1400,
