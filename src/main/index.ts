@@ -42,6 +42,11 @@ const sessionStore = new Conf<PersistedMultiSessionStore>({
   defaults: DEFAULT_MULTI_SESSION,
 })
 
+const themeStore = new Conf<{ theme: 'light' | 'dark' }>({
+  name: 'theme',
+  defaults: { theme: 'light' },
+})
+
 // Register IPC handlers before app.whenReady() to avoid race conditions
 ipcMain.handle('dw:execute', async (_event, payload: ExecutePayload) => {
   return executeDw(payload)
@@ -70,6 +75,12 @@ ipcMain.handle('sessions:clear', () => {
   } catch {
     // silently ignore
   }
+})
+
+ipcMain.handle('theme:get', () => themeStore.get('theme'))
+
+ipcMain.handle('theme:set', (_e, theme: 'light' | 'dark') => {
+  themeStore.set('theme', theme)
 })
 
 ipcMain.handle('dialog:openFile', async () => {
@@ -127,6 +138,18 @@ function createWindow(): void {
         { role: 'copy' as const },
         { role: 'paste' as const },
         { role: 'selectAll' as const }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        {
+          label: 'Toggle Dark Mode',
+          accelerator: 'CommandOrControl+Shift+D',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('theme:toggle')
+          }
+        }
       ]
     },
     {

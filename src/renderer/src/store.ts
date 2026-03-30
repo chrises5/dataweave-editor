@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import type { InputSlot, ExecutePayload, PersistedSessionData, LiveSessionData } from './types'
 
+function applyThemeToDOM(theme: 'light' | 'dark'): void {
+  if (theme === 'dark') {
+    document.documentElement.classList.add('dark')
+  } else {
+    document.documentElement.classList.remove('dark')
+  }
+}
+
 const DEFAULT_SCRIPT = '%dw 2.0\noutput application/json\n---\npayload'
 const SLOT_NAMES = ['payload', 'vars', 'attributes']
 const DEFAULT_INPUT: InputSlot = { id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }
@@ -29,6 +37,10 @@ interface EditorStore {
   sessions: Record<string, LiveSessionData>
   activeSessionId: string
   sessionOrder: string[]
+  theme: 'light' | 'dark'
+
+  // Theme
+  toggleTheme: () => void
 
   // Session management
   addSession: () => void
@@ -80,6 +92,14 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     sessions: { [_initial.id]: _initial },
     activeSessionId: _initial.id,
     sessionOrder: [_initial.id],
+    theme: 'light',
+
+    toggleTheme: () => {
+      const newTheme = get().theme === 'dark' ? 'light' : 'dark'
+      set({ theme: newTheme })
+      applyThemeToDOM(newTheme)
+      window.api.setTheme(newTheme)
+    },
 
     addSession: () => {
       const { sessions, sessionOrder } = get()
@@ -337,6 +357,11 @@ function loadSessionsIntoStore(persisted: PersistedSessionData[], activeIndex: n
 
 export async function hydrateFromPersistence(): Promise<void> {
   try {
+    const savedTheme = await window.api.getTheme()
+    const theme = savedTheme === 'dark' ? 'dark' : 'light'
+    useEditorStore.setState({ theme })
+    applyThemeToDOM(theme)
+
     const saved = await window.api.getSessions()
 
     // Migration: detect old single-session format (no .sessions array)

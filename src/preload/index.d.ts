@@ -51,6 +51,10 @@ export interface ElectronAPI {
   onTabClose: (cb: () => void) => () => void
   onTabNext: (cb: () => void) => () => void
   onTabPrev: (cb: () => void) => () => void
+  // Theme persistence
+  getTheme: () => Promise<'light' | 'dark'>
+  setTheme: (theme: 'light' | 'dark') => Promise<void>
+  onThemeToggle: (cb: () => void) => () => void
 }
 
 declare global {
