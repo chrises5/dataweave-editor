@@ -28,3 +28,32 @@ export const MIME_OPTIONS = [
   { value: 'application/x-www-form-urlencoded', label: 'URL-encoded' },
   { value: 'multipart/form-data', label: 'Multipart' },
 ] as const
+
+export interface PersistedInput {
+  id: string
+  name: string
+  mimeType: string
+  content: string
+}
+
+export interface PersistedSessionData {
+  id: string
+  name: string
+  script: string
+  inputs: PersistedInput[]
+  panelSizes: number[]
+}
+
+export interface LiveSessionData extends PersistedSessionData {
+  // Runtime-only fields — NOT persisted (D-08)
+  output: string
+  error: string | null
+  running: boolean
+  logs: string[]
+  logPanelOpen: boolean
+}
+
+export interface PersistedMultiSessionStore {
+  sessions: PersistedSessionData[]
+  activeSessionIndex: number
+}

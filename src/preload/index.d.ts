@@ -24,10 +24,17 @@ export interface PersistedInput {
   content: string
 }
 
-export interface SessionState {
+export interface PersistedSessionData {
+  id: string
+  name: string
   script: string
   inputs: PersistedInput[]
   panelSizes: number[]
+}
+
+export interface PersistedMultiSessionStore {
+  sessions: PersistedSessionData[]
+  activeSessionIndex: number
 }
 
 export interface ElectronAPI {
@@ -35,9 +42,15 @@ export interface ElectronAPI {
   onRun: (cb: () => void) => () => void
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>
   readFile: (filePath: string) => Promise<string>
-  getSession: () => Promise<SessionState>
-  setSession: (data: Record<string, unknown>) => Promise<void>
-  clearSession: () => Promise<void>
+  // Multi-session persistence (replaces getSession/setSession/clearSession)
+  getSessions: () => Promise<PersistedMultiSessionStore>
+  setSessions: (data: Partial<PersistedMultiSessionStore>) => Promise<void>
+  clearSessions: () => Promise<void>
+  // Tab keyboard shortcuts from main process menu
+  onTabNew: (cb: () => void) => () => void
+  onTabClose: (cb: () => void) => () => void
+  onTabNext: (cb: () => void) => () => void
+  onTabPrev: (cb: () => void) => () => void
 }
 
 declare global {

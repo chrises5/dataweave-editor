@@ -12,7 +12,29 @@ contextBridge.exposeInMainWorld('api', {
   },
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
   readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
-  getSession: () => ipcRenderer.invoke('store:get'),
-  setSession: (data: Record<string, unknown>) => ipcRenderer.invoke('store:set', data),
-  clearSession: () => ipcRenderer.invoke('store:clear'),
+  // Multi-session persistence
+  getSessions: () => ipcRenderer.invoke('sessions:get'),
+  setSessions: (data: Record<string, unknown>) => ipcRenderer.invoke('sessions:set', data),
+  clearSessions: () => ipcRenderer.invoke('sessions:clear'),
+  // Tab keyboard shortcuts from main process menu
+  onTabNew: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('tab:new', listener)
+    return (): void => { ipcRenderer.removeListener('tab:new', listener) }
+  },
+  onTabClose: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('tab:close', listener)
+    return (): void => { ipcRenderer.removeListener('tab:close', listener) }
+  },
+  onTabNext: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('tab:next', listener)
+    return (): void => { ipcRenderer.removeListener('tab:next', listener) }
+  },
+  onTabPrev: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('tab:prev', listener)
+    return (): void => { ipcRenderer.removeListener('tab:prev', listener) }
+  },
 })
