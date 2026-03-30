@@ -8,17 +8,16 @@ import stripAnsi from 'strip-ansi'
 
 const execFileAsync = promisify(execFile)
 
-export async function getDwPath(): Promise<string> {
-  if (!app.isPackaged) {
-    return 'dw' // rely on system PATH in development
-  }
-  const bundled = join(process.resourcesPath, 'bin', 'dw')
-  try {
-    await access(bundled, constants.X_OK)
-    return bundled
-  } catch {
-    return 'dw' // fallback to PATH
-  }
+export interface ExecuteInputSlot {
+  name: string
+  mimeType: string
+  content: string | null
+  filePath: string | null
+}
+
+export interface ExecutePayload {
+  script: string
+  inputs: ExecuteInputSlot[]
 }
 
 export interface DwResult {
@@ -27,17 +26,52 @@ export interface DwResult {
   error?: string
 }
 
-export async function executeDw(script: string, input: string): Promise<DwResult> {
+const MIME_TO_EXT: Record<string, string> = {
+  'application/json': '.json',
+  'application/xml': '.xml',
+  'text/csv': '.csv',
+  'application/yaml': '.yaml',
+  'text/plain': '.txt',
+  'application/x-www-form-urlencoded': '.txt',
+  'multipart/form-data': '.multipart',
+}
+
+export async function getDwPath(): Promise<string> {
+  if (!app.isPackaged) {
+    return 'dw'
+  }
+  const bundled = join(process.resourcesPath, 'bin', 'dw')
+  try {
+    await access(bundled, constants.X_OK)
+    return bundled
+  } catch {
+    return 'dw'
+  }
+}
+
+export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
   const dir = await mkdtemp(join(tmpdir(), 'dw-'))
   const scriptPath = join(dir, 'transform.dwl')
-  const inputPath = join(dir, 'payload.json')
   try {
-    await writeFile(scriptPath, script, 'utf8')
-    await writeFile(inputPath, input, 'utf8')
+    await writeFile(scriptPath, payload.script, 'utf8')
+
+    const inputArgs: string[] = []
+    for (const slot of payload.inputs) {
+      let inputPath: string
+      if (slot.filePath) {
+        inputPath = slot.filePath
+      } else {
+        const ext = MIME_TO_EXT[slot.mimeType] ?? '.txt'
+        inputPath = join(dir, `${slot.name}${ext}`)
+        await writeFile(inputPath, slot.content ?? '', 'utf8')
+      }
+      inputArgs.push('-i', `${slot.name}=${inputPath}`)
+    }
+
     const dwPath = await getDwPath()
     const { stdout } = await execFileAsync(
       dwPath,
-      ['run', '-i', `payload=${inputPath}`, '-f', scriptPath],
+      ['run', ...inputArgs, '-f', scriptPath],
       { timeout: 30_000, encoding: 'utf8' }
     )
     return { ok: true, output: stdout }

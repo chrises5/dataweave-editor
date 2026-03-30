@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useEditorStore } from './store'
 
 export function App(): React.JSX.Element {
-  const { script, input, output, error, running, setScript, setInput, run } = useEditorStore()
+  const { script, inputs, output, error, running, setScript, updateInput, run } = useEditorStore()
 
   useEffect(() => {
     const cleanup = window.api.onRun(() => {
@@ -10,6 +10,8 @@ export function App(): React.JSX.Element {
     })
     return cleanup
   }, [])
+
+  const firstInput = inputs[0]
 
   return (
     <div
@@ -42,8 +44,8 @@ export function App(): React.JSX.Element {
           Input (JSON)
         </div>
         <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
+          value={firstInput?.content ?? ''}
+          onChange={(e) => firstInput && updateInput(firstInput.id, { content: e.target.value })}
           placeholder='{"key": "value"}'
           spellCheck={false}
           style={{

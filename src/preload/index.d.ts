@@ -4,9 +4,22 @@ export interface DwResult {
   error?: string
 }
 
+export interface ExecuteInputSlot {
+  name: string
+  mimeType: string
+  content: string | null
+  filePath: string | null
+}
+
+export interface ExecutePayload {
+  script: string
+  inputs: ExecuteInputSlot[]
+}
+
 export interface ElectronAPI {
-  execute: (script: string, input: string) => Promise<DwResult>
+  execute: (payload: ExecutePayload) => Promise<DwResult>
   onRun: (cb: () => void) => () => void
+  openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>
 }
 
 declare global {
