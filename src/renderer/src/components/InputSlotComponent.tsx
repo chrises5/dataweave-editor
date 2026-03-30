@@ -106,7 +106,7 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
           height="100%"
           language={editorLanguage}
           value={slot.content}
-          onChange={(val) => updateInput(slot.id, { content: val ?? '' })}
+          onChange={(val) => updateInput(slot.id, { content: val ?? '', filePath: undefined, fileName: undefined })}
           options={{
             minimap: { enabled: false },
             automaticLayout: true,
