@@ -9,11 +9,15 @@ interface EditorStore {
   output: string
   error: string | null
   running: boolean
+  logs: string[]
+  logPanelOpen: boolean
   setScript: (s: string) => void
   addInput: () => void
   removeInput: (id: string) => void
   updateInput: (id: string, patch: Partial<InputSlot>) => void
   run: () => Promise<void>
+  setLogs: (logs: string[]) => void
+  toggleLogPanel: () => void
 }
 
 export const useEditorStore = create<EditorStore>((set, get) => ({
@@ -24,7 +28,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   output: '',
   error: null,
   running: false,
+  logs: [],
+  logPanelOpen: false,
   setScript: (script) => set({ script }),
+  setLogs: (logs) => set({ logs }),
+  toggleLogPanel: () => set((state) => ({ logPanelOpen: !state.logPanelOpen })),
   addInput: () => {
     const id = String(nextId++)
     set((state) => ({
@@ -61,9 +69,11 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       }
       const result = await window.api.execute(payload)
       if (result.ok) {
-        set({ output: result.output ?? '', running: false })
+        const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false })
+        const logs = (result.logs ?? []).map((l: string) => `[${timestamp}] ${l}`)
+        set({ output: result.output ?? '', running: false, logs, error: null })
       } else {
-        set({ error: result.error ?? 'Unknown error', running: false })
+        set({ error: result.error ?? 'Unknown error', running: false, logs: [] })
       }
     } catch (err) {
       set({ error: String(err), running: false })

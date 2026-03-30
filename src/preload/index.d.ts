@@ -1,6 +1,7 @@
 export interface DwResult {
   ok: boolean
   output?: string
+  logs?: string[]
   error?: string
 }
 
