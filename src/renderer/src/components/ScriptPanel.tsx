@@ -1,6 +1,7 @@
 import React from 'react'
 import { Editor } from '@monaco-editor/react'
 import type { Monaco } from '@monaco-editor/react'
+import { RotateCcw } from 'lucide-react'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
 import { DATAWEAVE_LANGUAGE_ID, dwLanguageConfig, dwMonarchTokens } from '../lib/dataweave-lang'
@@ -17,19 +18,31 @@ export function ScriptPanel(): React.JSX.Element {
   const setScript = useEditorStore((s) => s.setScript)
   const run = useEditorStore((s) => s.run)
   const running = useEditorStore((s) => s.running)
+  const newSession = useEditorStore((s) => s.newSession)
 
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/50">
         <span className="text-xs font-semibold">Script</span>
-        <Button
-          size="sm"
-          onClick={run}
-          disabled={running}
-          className="h-7 px-4 text-xs"
-        >
-          {running ? 'Running...' : 'Run (\u2318\u21B5)'}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={newSession}
+            className="h-7 px-2 text-xs text-muted-foreground"
+            title="New Session"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            size="sm"
+            onClick={run}
+            disabled={running}
+            className="h-7 px-4 text-xs"
+          >
+            {running ? 'Running...' : 'Run (\u2318\u21B5)'}
+          </Button>
+        </div>
       </div>
       <div className="flex-1">
         <Editor
