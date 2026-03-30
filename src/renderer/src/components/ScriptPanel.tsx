@@ -1,7 +1,6 @@
 import React from 'react'
 import { Editor } from '@monaco-editor/react'
 import type { Monaco } from '@monaco-editor/react'
-import { RotateCcw } from 'lucide-react'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
 import { DATAWEAVE_LANGUAGE_ID, dwLanguageConfig, dwMonarchTokens } from '../lib/dataweave-lang'
@@ -14,26 +13,16 @@ function registerDataWeaveLanguage(monaco: Monaco): void {
 }
 
 export function ScriptPanel(): React.JSX.Element {
-  const script = useEditorStore((s) => s.script)
+  const script = useEditorStore((s) => s.sessions[s.activeSessionId]?.script ?? '')
   const setScript = useEditorStore((s) => s.setScript)
   const run = useEditorStore((s) => s.run)
-  const running = useEditorStore((s) => s.running)
-  const newSession = useEditorStore((s) => s.newSession)
+  const running = useEditorStore((s) => s.sessions[s.activeSessionId]?.running ?? false)
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/50">
+      <div className="flex items-center justify-between px-3 h-10 border-b border-border bg-muted/50">
         <span className="text-xs font-semibold">Script</span>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={newSession}
-            className="h-7 px-2 text-xs text-muted-foreground"
-            title="New Session"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
           <Button
             size="sm"
             onClick={run}
@@ -54,7 +43,7 @@ export function ScriptPanel(): React.JSX.Element {
           options={{
             minimap: { enabled: false },
             automaticLayout: true,
-            fontSize: 13,
+            fontSize: 12,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             scrollBeyondLastLine: false,
             wordWrap: 'on',

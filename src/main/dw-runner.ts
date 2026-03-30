@@ -4,7 +4,9 @@ import { promisify } from 'util'
 import { mkdtemp, writeFile, readFile, rm, access, constants } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import stripAnsi from 'strip-ansi'
+import { randomUUID } from 'crypto'
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (s: string): string => s.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
 
 const execFileAsync = promisify(execFile)
 
@@ -61,7 +63,11 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
   try {
     await writeFile(scriptPath, payload.script, 'utf8')
 
-    const inputArgs: string[] = []
+    // Always provide a correlationId variable (UUID)
+    const correlationIdPath = join(dir, 'correlationId.txt')
+    await writeFile(correlationIdPath, randomUUID(), 'utf8')
+    const inputArgs: string[] = ['-i', `correlationId=${correlationIdPath}`]
+
     for (const slot of payload.inputs) {
       let inputPath: string
       if (slot.filePath) {

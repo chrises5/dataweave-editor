@@ -1,11 +1,11 @@
-import { app, shell, BrowserWindow, ipcMain, Menu, MenuItem, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { executeDw, type ExecutePayload } from './dw-runner'
 import icon from '../../resources/icon.png?asset'
 import { Conf } from 'electron-conf/main'
 
-// Session persistence schema (filePath/fileName intentionally omitted — file-loaded inputs not persisted per D-12)
+// Multi-session persistence schema
 interface PersistedInput {
   id: string
   name: string
@@ -13,21 +13,33 @@ interface PersistedInput {
   content: string
 }
 
-interface SessionState {
+interface PersistedSessionData {
+  id: string
+  name: string
   script: string
   inputs: PersistedInput[]
   panelSizes: number[]
 }
 
-const DEFAULT_SESSION: SessionState = {
-  script: '%dw 2.0\noutput application/json\n---\npayload',
-  inputs: [{ id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }],
-  panelSizes: [],
+interface PersistedMultiSessionStore {
+  sessions: PersistedSessionData[]
+  activeSessionIndex: number
 }
 
-const sessionStore = new Conf<SessionState>({
+const DEFAULT_MULTI_SESSION: PersistedMultiSessionStore = {
+  sessions: [{
+    id: crypto.randomUUID(),
+    name: 'Session 1',
+    script: '%dw 2.0\noutput application/json\n---\npayload',
+    inputs: [{ id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }],
+    panelSizes: [],
+  }],
+  activeSessionIndex: 0,
+}
+
+const sessionStore = new Conf<PersistedMultiSessionStore>({
   name: 'session',
-  defaults: DEFAULT_SESSION,
+  defaults: DEFAULT_MULTI_SESSION,
 })
 
 // Register IPC handlers before app.whenReady() to avoid race conditions
@@ -35,27 +47,26 @@ ipcMain.handle('dw:execute', async (_event, payload: ExecutePayload) => {
   return executeDw(payload)
 })
 
-ipcMain.handle('store:get', () => {
+ipcMain.handle('sessions:get', () => {
   try {
     return sessionStore.store
   } catch {
-    return DEFAULT_SESSION  // D-14: silently fall back to defaults
+    return DEFAULT_MULTI_SESSION
   }
 })
 
-ipcMain.handle('store:set', (_e, data: Partial<SessionState>) => {
+ipcMain.handle('sessions:set', (_e, data: Partial<PersistedMultiSessionStore>) => {
   try {
-    for (const [key, value] of Object.entries(data)) {
-      sessionStore.set(key as keyof SessionState, value as SessionState[keyof SessionState])
-    }
+    if (data.sessions !== undefined) sessionStore.set('sessions', data.sessions)
+    if (data.activeSessionIndex !== undefined) sessionStore.set('activeSessionIndex', data.activeSessionIndex)
   } catch {
-    // D-14: silently ignore write errors
+    // silently ignore write errors
   }
 })
 
-ipcMain.handle('store:clear', () => {
+ipcMain.handle('sessions:clear', () => {
   try {
-    sessionStore.store = DEFAULT_SESSION  // D-17: reset to defaults
+    sessionStore.store = DEFAULT_MULTI_SESSION
   } catch {
     // silently ignore
   }
@@ -101,17 +112,69 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // Register Cmd/Ctrl+Enter keyboard shortcut via Menu accelerator
-  const menu = new Menu()
-  menu.append(
-    new MenuItem({
+  // Application menu with Edit (clipboard), Run shortcut, and Tabs shortcuts
+  const menu = Menu.buildFromTemplate([
+    ...(process.platform === 'darwin'
+      ? [{ role: 'appMenu' as const }]
+      : []),
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' as const },
+        { role: 'redo' as const },
+        { type: 'separator' as const },
+        { role: 'cut' as const },
+        { role: 'copy' as const },
+        { role: 'paste' as const },
+        { role: 'selectAll' as const }
+      ]
+    },
+    {
       label: 'Run',
-      accelerator: 'CommandOrControl+Enter',
-      click: (_menuItem, browserWindow) => {
-        ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:run')
-      }
-    })
-  )
+      submenu: [
+        {
+          label: 'Execute Script',
+          accelerator: 'CommandOrControl+Enter',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:run')
+          }
+        }
+      ]
+    },
+    {
+      label: 'Tabs',
+      submenu: [
+        {
+          label: 'New Tab',
+          accelerator: 'CommandOrControl+T',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('tab:new')
+          }
+        },
+        {
+          label: 'Close Tab',
+          accelerator: 'CommandOrControl+W',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('tab:close')
+          }
+        },
+        {
+          label: 'Next Tab',
+          accelerator: 'CommandOrControl+Shift+]',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('tab:next')
+          }
+        },
+        {
+          label: 'Previous Tab',
+          accelerator: 'CommandOrControl+Shift+[',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('tab:prev')
+          }
+        },
+      ]
+    }
+  ])
   Menu.setApplicationMenu(menu)
 
   // HMR for renderer base on electron-vite cli.

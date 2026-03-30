@@ -44,7 +44,9 @@ export interface PersistedSessionData {
   panelSizes: number[]
 }
 
-export interface LiveSessionData extends PersistedSessionData {
+export interface LiveSessionData extends Omit<PersistedSessionData, 'inputs'> {
+  // inputs uses InputSlot (with filePath/fileName) at runtime; PersistedInput at rest
+  inputs: InputSlot[]
   // Runtime-only fields — NOT persisted (D-08)
   output: string
   error: string | null

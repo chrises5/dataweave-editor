@@ -1,19 +1,44 @@
 import { create } from 'zustand'
-import type { InputSlot, ExecutePayload } from './types'
-
-let nextId = 2  // id '1' used by default slot
+import type { InputSlot, ExecutePayload, PersistedSessionData, LiveSessionData } from './types'
 
 const DEFAULT_SCRIPT = '%dw 2.0\noutput application/json\n---\npayload'
+const SLOT_NAMES = ['payload', 'vars', 'attributes']
 const DEFAULT_INPUT: InputSlot = { id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }
 
+function getNextInputId(inputs: InputSlot[]): string {
+  const maxId = inputs.reduce((max, s) => Math.max(max, parseInt(s.id, 10) || 0), 0)
+  return String(maxId + 1)
+}
+
+function createDefaultSession(name: string): LiveSessionData {
+  return {
+    id: crypto.randomUUID(),
+    name,
+    script: DEFAULT_SCRIPT,
+    inputs: [{ ...DEFAULT_INPUT }],
+    panelSizes: [],
+    output: '',
+    error: null,
+    running: false,
+    logs: [],
+    logPanelOpen: false,
+  }
+}
+
 interface EditorStore {
-  script: string
-  inputs: InputSlot[]
-  output: string
-  error: string | null
-  running: boolean
-  logs: string[]
-  logPanelOpen: boolean
+  sessions: Record<string, LiveSessionData>
+  activeSessionId: string
+  sessionOrder: string[]
+
+  // Session management
+  addSession: () => void
+  removeSession: (id: string) => void
+  switchSession: (id: string) => void
+  renameSession: (id: string, name: string) => void
+  nextTab: () => void
+  prevTab: () => void
+
+  // Per-session actions (operate on active session)
   setScript: (s: string) => void
   addInput: () => void
   removeInput: (id: string) => void
@@ -21,72 +46,219 @@ interface EditorStore {
   run: () => Promise<void>
   setLogs: (logs: string[]) => void
   toggleLogPanel: () => void
-  newSession: () => Promise<void>
 }
 
+// Bootstrap initial session so store is never empty
+const _initial = createDefaultSession('Session 1')
+
 export const useEditorStore = create<EditorStore>((set, get) => {
-  // Helper to persist current inputs (strips filePath/fileName per D-12)
-  const persistInputs = (): void => {
-    const inputs = get().inputs.map(({ id, name, mimeType, content, filePath }) => ({
-      id, name, mimeType,
-      content: filePath ? '' : content,  // D-12: file-loaded slots persist as empty
-    }))
-    window.api.setSession({ inputs })
+  const persistSessions = (): void => {
+    const { sessions, sessionOrder, activeSessionId } = get()
+    const ordered: PersistedSessionData[] = sessionOrder
+      .filter((id) => sessions[id])
+      .map((id) => {
+        const s = sessions[id]
+        return {
+          id: s.id,
+          name: s.name,
+          script: s.script,
+          inputs: s.inputs.map(({ id: iid, name, mimeType, content, filePath }) => ({
+            id: iid, name, mimeType,
+            content: filePath ? '' : content,
+          })),
+          panelSizes: s.panelSizes,
+        }
+      })
+    const activeIndex = sessionOrder.indexOf(activeSessionId)
+    window.api.setSessions({
+      sessions: ordered,
+      activeSessionIndex: Math.max(0, activeIndex),
+    })
   }
 
   return {
-    script: DEFAULT_SCRIPT,
-    inputs: [{ ...DEFAULT_INPUT }],
-    output: '',
-    error: null,
-    running: false,
-    logs: [],
-    logPanelOpen: false,
+    sessions: { [_initial.id]: _initial },
+    activeSessionId: _initial.id,
+    sessionOrder: [_initial.id],
+
+    addSession: () => {
+      const { sessions, sessionOrder } = get()
+      const maxNum = sessionOrder.reduce((max, id) => {
+        const match = sessions[id]?.name.match(/^Session (\d+)$/)
+        return match ? Math.max(max, parseInt(match[1])) : max
+      }, 0)
+      const newSession = createDefaultSession(`Session ${maxNum + 1}`)
+      set((state) => ({
+        sessions: { ...state.sessions, [newSession.id]: newSession },
+        sessionOrder: [...state.sessionOrder, newSession.id],
+        activeSessionId: newSession.id,
+      }))
+      persistSessions()
+    },
+
+    removeSession: (id) => {
+      const { sessionOrder, activeSessionId } = get()
+      if (sessionOrder.length === 1) {
+        // D-11: last tab — create fresh session first, then remove old
+        const fresh = createDefaultSession('Session 1')
+        set((state) => {
+          const newSessions = { ...state.sessions, [fresh.id]: fresh }
+          delete newSessions[id]
+          return {
+            sessions: newSessions,
+            sessionOrder: [fresh.id],
+            activeSessionId: fresh.id,
+          }
+        })
+        persistSessions()
+        return
+      }
+      const idx = sessionOrder.indexOf(id)
+      const newOrder = sessionOrder.filter((sid) => sid !== id)
+      const newActiveId = id === activeSessionId
+        ? (newOrder[Math.min(idx, newOrder.length - 1)] ?? newOrder[0])
+        : activeSessionId
+      set((state) => {
+        const newSessions = { ...state.sessions }
+        delete newSessions[id]
+        return { sessions: newSessions, sessionOrder: newOrder, activeSessionId: newActiveId }
+      })
+      persistSessions()
+    },
+
+    switchSession: (id) => {
+      set({ activeSessionId: id })
+      persistSessions()
+    },
+
+    renameSession: (id, name) => {
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [id]: { ...state.sessions[id], name: name.trim() || 'unnamed' },
+        },
+      }))
+      persistSessions()
+    },
+
+    nextTab: () => {
+      const { sessionOrder, activeSessionId } = get()
+      const idx = sessionOrder.indexOf(activeSessionId)
+      const nextIdx = (idx + 1) % sessionOrder.length
+      set({ activeSessionId: sessionOrder[nextIdx] })
+      persistSessions()
+    },
+
+    prevTab: () => {
+      const { sessionOrder, activeSessionId } = get()
+      const idx = sessionOrder.indexOf(activeSessionId)
+      const prevIdx = (idx - 1 + sessionOrder.length) % sessionOrder.length
+      set({ activeSessionId: sessionOrder[prevIdx] })
+      persistSessions()
+    },
+
     setScript: (script) => {
-      set({ script })
-      window.api.setSession({ script })
+      set((state) => {
+        const id = state.activeSessionId
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: { ...state.sessions[id], script },
+          },
+        }
+      })
+      persistSessions()
     },
-    setLogs: (logs) => set({ logs }),
-    toggleLogPanel: () => set((state) => ({ logPanelOpen: !state.logPanelOpen })),
-    addInput: () => {
-      const id = String(nextId++)
-      set((state) => ({
-        inputs: [...state.inputs, {
-          id,
-          name: `var${id}`,
-          mimeType: 'application/json',
-          content: ''
-        }]
-      }))
-      persistInputs()
-    },
-    removeInput: (id) => {
-      set((state) => ({
-        inputs: state.inputs.filter((s) => s.id !== id)
-      }))
-      persistInputs()
-    },
-    updateInput: (id, patch) => {
-      set((state) => ({
-        inputs: state.inputs.map((s) => s.id === id ? { ...s, ...patch } : s)
-      }))
-      persistInputs()
-    },
-    newSession: async () => {
-      await window.api.clearSession()
-      nextId = 2
-      set({
-        script: DEFAULT_SCRIPT,
-        inputs: [{ ...DEFAULT_INPUT }],
-        output: '',
-        error: null,
-        logs: [],
-        logPanelOpen: false,
+
+    setLogs: (logs) => {
+      set((state) => {
+        const id = state.activeSessionId
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: { ...state.sessions[id], logs },
+          },
+        }
       })
     },
+
+    toggleLogPanel: () => {
+      set((state) => {
+        const id = state.activeSessionId
+        const session = state.sessions[id]
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: { ...session, logPanelOpen: !session.logPanelOpen },
+          },
+        }
+      })
+    },
+
+    addInput: () => {
+      set((state) => {
+        const id = state.activeSessionId
+        const session = state.sessions[id]
+        const newId = getNextInputId(session.inputs)
+        const idx = session.inputs.length
+        const name = idx < SLOT_NAMES.length ? SLOT_NAMES[idx] : `var${idx - SLOT_NAMES.length + 1}`
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: {
+              ...session,
+              inputs: [...session.inputs, { id: newId, name, mimeType: 'application/json', content: '' }],
+            },
+          },
+        }
+      })
+      persistSessions()
+    },
+
+    removeInput: (inputId) => {
+      set((state) => {
+        const id = state.activeSessionId
+        const session = state.sessions[id]
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: {
+              ...session,
+              inputs: session.inputs.filter((s) => s.id !== inputId),
+            },
+          },
+        }
+      })
+      persistSessions()
+    },
+
+    updateInput: (inputId, patch) => {
+      set((state) => {
+        const id = state.activeSessionId
+        const session = state.sessions[id]
+        return {
+          sessions: {
+            ...state.sessions,
+            [id]: {
+              ...session,
+              inputs: session.inputs.map((s) => s.id === inputId ? { ...s, ...patch } : s),
+            },
+          },
+        }
+      })
+      persistSessions()
+    },
+
     run: async () => {
-      const { script, inputs } = get()
-      set({ running: true, error: null, output: '' })
+      const { sessions, activeSessionId } = get()
+      const session = sessions[activeSessionId]
+      const { script, inputs } = session
+      set((state) => ({
+        sessions: {
+          ...state.sessions,
+          [activeSessionId]: { ...state.sessions[activeSessionId], running: true, error: null, output: '' },
+        },
+      }))
       try {
         const payload: ExecutePayload = {
           script,
@@ -101,34 +273,89 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         if (result.ok) {
           const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false })
           const logs = (result.logs ?? []).map((l: string) => `[${timestamp}] ${l}`)
-          set({ output: result.output ?? '', running: false, logs, error: null })
+          set((state) => ({
+            sessions: {
+              ...state.sessions,
+              [activeSessionId]: { ...state.sessions[activeSessionId], output: result.output ?? '', running: false, logs, error: null },
+            },
+          }))
         } else {
-          set({ error: result.error ?? 'Unknown error', running: false, logs: [] })
+          set((state) => ({
+            sessions: {
+              ...state.sessions,
+              [activeSessionId]: { ...state.sessions[activeSessionId], error: result.error ?? 'Unknown error', running: false, logs: [] },
+            },
+          }))
         }
       } catch (err) {
-        set({ error: String(err), running: false })
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [activeSessionId]: { ...state.sessions[activeSessionId], error: String(err), running: false },
+          },
+        }))
       }
     }
   }
 })
 
-export async function hydrateFromPersistence(): Promise<{ panelSizes: number[] }> {
-  try {
-    const saved = await window.api.getSession()
-    if (saved && saved.script) {
-      useEditorStore.setState({
-        script: saved.script,
-        inputs: (saved.inputs ?? []).map((s: { id: string; name: string; mimeType: string; content: string }, i: number) => ({
-          ...s,
-          id: String(i + 1),
-        })),
-      })
-      // Update nextId to avoid collisions with restored inputs
-      nextId = (saved.inputs ?? []).length + 1
+function loadSessionsIntoStore(persisted: PersistedSessionData[], activeIndex: number): void {
+  if (persisted.length === 0) {
+    const fresh = createDefaultSession('Session 1')
+    useEditorStore.setState({
+      sessions: { [fresh.id]: fresh },
+      sessionOrder: [fresh.id],
+      activeSessionId: fresh.id,
+    })
+    return
+  }
+
+  const sessions: Record<string, LiveSessionData> = {}
+  const sessionOrder: string[] = []
+
+  for (const s of persisted) {
+    const live: LiveSessionData = {
+      ...s,
+      inputs: s.inputs.map((inp, i) => ({ ...inp, id: String(i + 1) })),
+      output: '',
+      error: null,
+      running: false,
+      logs: [],
+      logPanelOpen: false,
     }
-    return { panelSizes: saved?.panelSizes ?? [] }
+    sessions[s.id] = live
+    sessionOrder.push(s.id)
+  }
+
+  const safeIndex = Math.min(activeIndex, sessionOrder.length - 1)
+  useEditorStore.setState({
+    sessions,
+    sessionOrder,
+    activeSessionId: sessionOrder[safeIndex] ?? sessionOrder[0],
+  })
+}
+
+export async function hydrateFromPersistence(): Promise<void> {
+  try {
+    const saved = await window.api.getSessions()
+
+    // Migration: detect old single-session format (no .sessions array)
+    if (!saved || !Array.isArray(saved.sessions) || saved.sessions.length === 0) {
+      const oldState = saved as unknown as { script?: string; inputs?: Array<{ id: string; name: string; mimeType: string; content: string }>; panelSizes?: number[] }
+      const migrated: PersistedSessionData = {
+        id: crypto.randomUUID(),
+        name: 'Session 1',
+        script: oldState?.script ?? DEFAULT_SCRIPT,
+        inputs: oldState?.inputs ?? [{ id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }],
+        panelSizes: oldState?.panelSizes ?? [],
+      }
+      await window.api.setSessions({ sessions: [migrated], activeSessionIndex: 0 })
+      loadSessionsIntoStore([migrated], 0)
+      return
+    }
+
+    loadSessionsIntoStore(saved.sessions, saved.activeSessionIndex ?? 0)
   } catch {
-    // D-14: silently fall back to defaults
-    return { panelSizes: [] }
+    loadSessionsIntoStore([], 0)
   }
 }

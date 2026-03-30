@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useCallback } from 'react'
 import { Editor } from '@monaco-editor/react'
 import { useEditorStore } from '../store'
 import { MIME_OPTIONS } from '../types'
@@ -29,19 +29,28 @@ const MIME_TO_LANGUAGE: Record<string, string> = {
 
 export function InputSlotComponent({ slot }: Props): React.JSX.Element {
   const updateInput = useEditorStore((s) => s.updateInput)
-  const removeInput = useEditorStore((s) => s.removeInput)
-  const inputs = useEditorStore((s) => s.inputs)
-  const canRemove = inputs.length > 1
+  const [dragging, setDragging] = useState(false)
 
-  const handleLoadFile = async (): Promise<void> => {
-    const result = await window.api.openFile()
-    if (!result.canceled && result.filePaths.length > 0) {
-      const filePath = result.filePaths[0]
-      const fileName = filePath.split('/').pop() ?? filePath
-      const content = await window.api.readFile(filePath)
-      updateInput(slot.id, { filePath, fileName, content })
-    }
-  }
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+    const filePath = (file as File & { path?: string }).path
+    if (!filePath) return
+    const content = await window.api.readFile(filePath)
+    const fileName = filePath.split('/').pop() ?? filePath
+    updateInput(slot.id, { filePath, fileName, content })
+  }, [slot.id, updateInput])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    setDragging(false)
+  }, [])
 
   const handleClearFile = (): void => {
     updateInput(slot.id, { filePath: undefined, fileName: undefined, content: '' })
@@ -50,16 +59,21 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
   const editorLanguage = MIME_TO_LANGUAGE[slot.mimeType] ?? 'plaintext'
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Slot toolbar: name, MIME selector, file button, remove button */}
+    <div
+      className={`flex flex-col h-full relative ${dragging ? 'ring-2 ring-inset ring-primary/50' : ''}`}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+    >
+      {/* Drop overlay */}
+      {dragging && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/5 pointer-events-none">
+          <span className="text-sm font-medium text-primary/70">Drop file here</span>
+        </div>
+      )}
+
+      {/* Slot toolbar: MIME selector */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/50">
-        <input
-          type="text"
-          value={slot.name}
-          onChange={(e) => updateInput(slot.id, { name: e.target.value })}
-          className="h-7 w-28 px-2 text-xs border border-border rounded bg-background"
-          placeholder="name"
-        />
         <Select
           value={slot.mimeType}
           onValueChange={(v) => updateInput(slot.id, { mimeType: v as string })}
@@ -75,9 +89,6 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
             ))}
           </SelectContent>
         </Select>
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={handleLoadFile}>
-          Load File
-        </Button>
         {slot.filePath && (
           <>
             <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={slot.fileName}>
@@ -87,16 +98,6 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
               Clear
             </Button>
           </>
-        )}
-        {canRemove && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-destructive hover:text-destructive"
-            onClick={() => removeInput(slot.id)}
-          >
-            Remove
-          </Button>
         )}
       </div>
 
@@ -110,7 +111,7 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
           options={{
             minimap: { enabled: false },
             automaticLayout: true,
-            fontSize: 13,
+            fontSize: 12,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             scrollBeyondLastLine: false,
             wordWrap: 'on',
