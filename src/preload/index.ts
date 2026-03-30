@@ -11,5 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
   openFile: () => ipcRenderer.invoke('dialog:openFile'),
-  readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath)
+  readFile: (filePath: string) => ipcRenderer.invoke('fs:readFile', filePath),
+  getSession: () => ipcRenderer.invoke('store:get'),
+  setSession: (data: Record<string, unknown>) => ipcRenderer.invoke('store:set', data),
+  clearSession: () => ipcRenderer.invoke('store:clear'),
 })

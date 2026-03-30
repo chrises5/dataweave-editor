@@ -3,10 +3,62 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { executeDw, type ExecutePayload } from './dw-runner'
 import icon from '../../resources/icon.png?asset'
+import { Conf } from 'electron-conf/main'
+
+// Session persistence schema (filePath/fileName intentionally omitted — file-loaded inputs not persisted per D-12)
+interface PersistedInput {
+  id: string
+  name: string
+  mimeType: string
+  content: string
+}
+
+interface SessionState {
+  script: string
+  inputs: PersistedInput[]
+  panelSizes: number[]
+}
+
+const DEFAULT_SESSION: SessionState = {
+  script: '%dw 2.0\noutput application/json\n---\npayload',
+  inputs: [{ id: '1', name: 'payload', mimeType: 'application/json', content: '{"hello": "world"}' }],
+  panelSizes: [],
+}
+
+const sessionStore = new Conf<SessionState>({
+  name: 'session',
+  defaults: DEFAULT_SESSION,
+})
 
 // Register IPC handlers before app.whenReady() to avoid race conditions
 ipcMain.handle('dw:execute', async (_event, payload: ExecutePayload) => {
   return executeDw(payload)
+})
+
+ipcMain.handle('store:get', () => {
+  try {
+    return sessionStore.store
+  } catch {
+    return DEFAULT_SESSION  // D-14: silently fall back to defaults
+  }
+})
+
+ipcMain.handle('store:set', (_e, data: Partial<SessionState>) => {
+  try {
+    for (const [key, value] of Object.entries(data)) {
+      sessionStore.set(key as keyof SessionState, value as SessionState[keyof SessionState])
+    }
+  } catch {
+    // D-14: silently ignore write errors
+  }
+})
+
+ipcMain.handle('store:clear', () => {
+  try {
+    sessionStore.store = DEFAULT_SESSION  // D-17: reset to defaults
+  } catch {
+    // silently ignore
+  }
 })
 
 ipcMain.handle('dialog:openFile', async () => {
