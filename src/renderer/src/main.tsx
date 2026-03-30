@@ -1,3 +1,4 @@
+import './monaco-workers'
 import './App.css'
 
 import { StrictMode } from 'react'

@@ -40,7 +40,7 @@ function createWindow(): void {
       label: 'Run',
       accelerator: 'CommandOrControl+Enter',
       click: (_menuItem, browserWindow) => {
-        browserWindow?.webContents.send('shortcut:run')
+        ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:run')
       }
     })
   )
