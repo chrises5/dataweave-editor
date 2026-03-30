@@ -29,6 +29,7 @@ const MIME_TO_LANGUAGE: Record<string, string> = {
 
 export function InputSlotComponent({ slot }: Props): React.JSX.Element {
   const updateInput = useEditorStore((s) => s.updateInput)
+  const theme = useEditorStore((s) => s.theme)
   const [dragging, setDragging] = useState(false)
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
@@ -106,6 +107,7 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
         <Editor
           height="100%"
           language={editorLanguage}
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
           value={slot.content}
           onChange={(val) => updateInput(slot.id, { content: val ?? '', filePath: undefined, fileName: undefined })}
           options={{

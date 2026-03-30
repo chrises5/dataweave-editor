@@ -17,6 +17,7 @@ export function ScriptPanel(): React.JSX.Element {
   const setScript = useEditorStore((s) => s.setScript)
   const run = useEditorStore((s) => s.run)
   const running = useEditorStore((s) => s.sessions[s.activeSessionId]?.running ?? false)
+  const theme = useEditorStore((s) => s.theme)
 
   return (
     <div className="flex flex-col h-full">
@@ -38,6 +39,7 @@ export function ScriptPanel(): React.JSX.Element {
           height="100%"
           defaultLanguage={DATAWEAVE_LANGUAGE_ID}
           beforeMount={registerDataWeaveLanguage}
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
           value={script}
           onChange={(val) => setScript(val ?? '')}
           options={{

@@ -21,6 +21,14 @@ export function App(): React.JSX.Element {
     return cleanup
   }, [])
 
+  // Theme toggle shortcut listener (Cmd+Shift+D from main process menu)
+  useEffect(() => {
+    const cleanup = window.api.onThemeToggle(() => {
+      useEditorStore.getState().toggleTheme()
+    })
+    return cleanup
+  }, [])
+
   // Tab keyboard shortcut listeners
   useEffect(() => {
     const cleanups = [

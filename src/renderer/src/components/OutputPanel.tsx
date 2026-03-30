@@ -29,6 +29,7 @@ export function OutputPanel(): React.JSX.Element {
   const logs = useEditorStore((s) => s.sessions[s.activeSessionId]?.logs ?? [])
   const logPanelOpen = useEditorStore((s) => s.sessions[s.activeSessionId]?.logPanelOpen ?? false)
   const toggleLogPanel = useEditorStore((s) => s.toggleLogPanel)
+  const theme = useEditorStore((s) => s.theme)
 
   const displayValue = error ?? output
   const hasError = error !== null
@@ -37,7 +38,7 @@ export function OutputPanel(): React.JSX.Element {
   return (
     <div className="flex flex-col h-full">
       <div
-        className={`flex items-center px-3 h-10 border-b border-border ${hasError ? 'bg-red-100 text-red-800' : 'bg-muted/50'}`}
+        className={`flex items-center px-3 h-10 border-b border-border ${hasError ? 'bg-destructive/10 text-destructive' : 'bg-muted/50'}`}
       >
         <span className="text-xs font-semibold">{hasError ? 'Error' : 'Output'}</span>
       </div>
@@ -45,6 +46,7 @@ export function OutputPanel(): React.JSX.Element {
         <Editor
           height="100%"
           language={outputLanguage}
+          theme={theme === 'dark' ? 'vs-dark' : 'vs'}
           value={displayValue}
           options={{
             readOnly: true,

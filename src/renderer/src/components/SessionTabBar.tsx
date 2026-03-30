@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { X, Sun, Moon } from 'lucide-react'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
 
@@ -11,6 +11,8 @@ export function SessionTabBar(): React.JSX.Element {
   const removeSession = useEditorStore((s) => s.removeSession)
   const switchSession = useEditorStore((s) => s.switchSession)
   const renameSession = useEditorStore((s) => s.renameSession)
+  const theme = useEditorStore((s) => s.theme)
+  const toggleTheme = useEditorStore((s) => s.toggleTheme)
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const editRef = useRef<HTMLInputElement>(null)
@@ -74,6 +76,17 @@ export function SessionTabBar(): React.JSX.Element {
       <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={addSession}>
         +
       </Button>
+      <div className="ml-auto flex items-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 w-6 p-0"
+          onClick={toggleTheme}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+        </Button>
+      </div>
     </div>
   )
 }
