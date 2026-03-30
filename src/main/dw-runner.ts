@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { mkdtemp, writeFile, rm, access, constants } from 'fs/promises'
+import { mkdtemp, writeFile, readFile, rm, access, constants } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import stripAnsi from 'strip-ansi'
@@ -23,7 +23,13 @@ export interface ExecutePayload {
 export interface DwResult {
   ok: boolean
   output?: string
+  logs?: string[]    // parsed log() lines from stdout (when using -o flag)
   error?: string
+}
+
+function parseLogLines(raw: string): string[] {
+  if (!raw.trim()) return []
+  return raw.split(/\n\n+/).map((s) => s.trim()).filter(Boolean)
 }
 
 const MIME_TO_EXT: Record<string, string> = {
@@ -69,12 +75,15 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
     }
 
     const dwPath = await getDwPath()
+    const outputPath = join(dir, 'output.txt')
     const { stdout } = await execFileAsync(
       dwPath,
-      ['run', ...inputArgs, '-f', scriptPath],
+      ['run', ...inputArgs, '-f', scriptPath, '-o', outputPath],
       { timeout: 30_000, encoding: 'utf8' }
     )
-    return { ok: true, output: stdout }
+    const rawLogs = stripAnsi(stdout)
+    const output = await readFile(outputPath, 'utf8').catch(() => '')
+    return { ok: true, output, logs: parseLogLines(rawLogs) }
   } catch (err: unknown) {
     const anyErr = err as { stderr?: string; message?: string }
     const raw: string = anyErr.stderr ?? anyErr.message ?? String(err)
