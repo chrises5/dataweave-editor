@@ -25,6 +25,7 @@ export interface DWObjectEntry {
   value: DWNode
   conditional: DWNode | null
   dynamic: boolean
+  spread?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }

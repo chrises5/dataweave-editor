@@ -82,6 +82,7 @@ const BINARY_PREC: Record<string, number> = {
   minBy: 48,
   joinBy: 48,
   contains: 48,
+  orElse: 48,
   '++': 50,
   '--': 50,
   '+': 60,
@@ -857,12 +858,54 @@ function parseObjectEntry(
       }
       return innerEntry
     }
-    // Not a conditional entry — restore and parse as dynamic key
+    // Not ident:value — could be:
+    // (if(cond) key: val else null) — conditional spread
+    // (expr): value — dynamic key
+    // (expr) if(cond) — conditional spread expression
     state.pos = saved
-    dynamic = true
-    advance(state) // consume ( again
-    key = parseExpression(state, 0, commentIdx)
+    advance(state) // consume (
+
+    if (at(state, TK.KwIf)) {
+      // Conditional spread: (if(cond) key: val else null)
+      // Parse as raw tokens until matching ) — only track parens
+      const startPos = state.pos
+      let parenDepth = 1
+      while (!at(state, TK.EOF) && parenDepth > 0) {
+        if (at(state, TK.LParen)) parenDepth++
+        else if (at(state, TK.RParen)) {
+          parenDepth--
+          if (parenDepth === 0) break
+        }
+        advance(state)
+      }
+      const rawTokens = state.tokens.slice(startPos, state.pos)
+      const rawStr = rawTokens.map(t => t.value).join(' ')
+      expect(state, TK.RParen) // consume )
+      const spreadExpr: DWIdentifier = { kind: 'Identifier', name: rawStr }
+      return { kind: 'ObjectEntry', key: spreadExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional: null, dynamic: false, spread: true } as DWObjectEntry
+    }
+
+    const innerExpr = parseExpression(state, 0, commentIdx)
     expect(state, TK.RParen)
+    if (at(state, TK.Colon)) {
+      // Dynamic key: (expr): value
+      dynamic = true
+      key = innerExpr
+    } else {
+      // Spread expression: (expr) if(cond)
+      let conditional: DWNode | null = null
+      if (at(state, TK.KwIf)) {
+        advance(state)
+        if (at(state, TK.LParen)) {
+          advance(state)
+          conditional = parseExpression(state, 0, commentIdx)
+          expect(state, TK.RParen)
+        } else {
+          conditional = parseExpression(state, 0, commentIdx)
+        }
+      }
+      return { kind: 'ObjectEntry', key: innerExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional, dynamic: false, spread: true } as DWObjectEntry
+    }
   } else if (at(state, TK.StringLit)) {
     key = { kind: 'Literal', value: advance(state).value, literalType: 'string' } as DWLiteral
   } else if (at(state, TK.Ident) || isKeywordUsedAsIdent(peek(state).kind)) {

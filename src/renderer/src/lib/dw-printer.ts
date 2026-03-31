@@ -216,6 +216,15 @@ function printParam(p: DWParam): Doc {
 // ─── printEntry ──────────────────────────────────────────────────────────────
 
 function printEntry(entry: DWObjectEntry): Doc {
+  // Spread entry: (if(...) key: val else null) — print just the expression in parens
+  if (entry.spread) {
+    let entryDoc: Doc = concat(text('('), printDoc(entry.key), text(')'))
+    if (entry.conditional !== null) {
+      entryDoc = concat(entryDoc, text(' if('), printDoc(entry.conditional), text(')'))
+    }
+    return wrapWithComments(entry, entryDoc)
+  }
+
   const keyDoc: Doc = entry.dynamic
     ? concat(text('('), printDoc(entry.key), text(')'))
     : printDoc(entry.key)
@@ -223,7 +232,7 @@ function printEntry(entry: DWObjectEntry): Doc {
   let entryDoc: Doc = concat(keyDoc, text(': '), printDoc(entry.value))
 
   if (entry.conditional !== null) {
-    entryDoc = concat(entryDoc, text(' if '), printDoc(entry.conditional))
+    entryDoc = concat(text('('), entryDoc, text(') if('), printDoc(entry.conditional), text(')'))
   }
 
   return wrapWithComments(entry, entryDoc)
