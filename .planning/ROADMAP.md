@@ -33,10 +33,10 @@
 ### Phase 8: AST-based DataWeave Formatter
 - **Goal:** Replace heuristic line-based formatter with recursive-descent parser, AST, and Doc-algebra pretty-printer for correct, maintainable DataWeave formatting
 - **Depends on:** None (independent of Phase 7)
-- **Status:** Planned
+- **Status:** In progress (2/3 plans complete)
 - **Plans:** 3 plans
 
 Plans:
 - [x] 08-01-PLAN.md — Lexer and AST type definitions
-- [ ] 08-02-PLAN.md — Recursive-descent Pratt parser
+- [x] 08-02-PLAN.md — Recursive-descent Pratt parser
 - [ ] 08-03-PLAN.md — Doc-algebra printer, V2 entry point, and ScriptPanel wiring
