@@ -380,7 +380,7 @@ export function lex(src: string): Token[] {
     }
 
     // ── Identifiers and keywords ───────────────────────────────────────────
-    if (isIdentStart(ch) && ch !== '$') {
+    if (isIdentStart(ch)) {
       let j = i
       while (j < src.length && isIdentCont(src[j])) j++
       const val = src.slice(i, j)

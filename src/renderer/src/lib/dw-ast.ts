@@ -14,6 +14,7 @@ export interface DWParam {
   kind: 'Param'
   name: string
   typeAnnotation: string | null
+  defaultValue?: string | null
   leadingComments?: string[]
   trailingComments?: string[]
 }

@@ -207,10 +207,10 @@ function wrapWithComments(node: { leadingComments?: string[]; trailingComments?:
 // ─── printParam ──────────────────────────────────────────────────────────────
 
 function printParam(p: DWParam): Doc {
-  if (p.typeAnnotation) {
-    return text(p.name + ': ' + p.typeAnnotation)
-  }
-  return text(p.name)
+  let s = p.name
+  if (p.typeAnnotation) s += ': ' + p.typeAnnotation
+  if (p.defaultValue) s += '=' + p.defaultValue
+  return text(s)
 }
 
 // ─── printEntry ──────────────────────────────────────────────────────────────

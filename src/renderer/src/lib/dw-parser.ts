@@ -68,6 +68,20 @@ const BINARY_PREC: Record<string, number> = {
   '>': 40,
   '>=': 40,
   is: 45,
+  // DataWeave infix functions — same precedence as ++ (concatenation level)
+  map: 48,
+  flatMap: 48,
+  filter: 48,
+  filterObject: 48,
+  reduce: 48,
+  pluck: 48,
+  groupBy: 48,
+  orderBy: 48,
+  distinctBy: 48,
+  maxBy: 48,
+  minBy: 48,
+  joinBy: 48,
+  contains: 48,
   '++': 50,
   '--': 50,
   '+': 60,
@@ -809,9 +823,38 @@ function parseObjectEntry(
   let key: DWNode
 
   if (at(state, TK.LParen)) {
-    // Dynamic key: (expr): value
+    // Could be:
+    // 1. Dynamic key: (expr): value
+    // 2. Conditional entry: (key: value) if(cond) — whole key:value wrapped in parens
+    // 3. Conditional entry with expression body: (expr) if(cond) — spreads/null
+    // Look ahead to distinguish: if we see `ident :` before `)`, it's a conditional entry.
+    const saved = state.pos
+    advance(state) // consume (
+    if ((at(state, TK.Ident) || at(state, TK.StringLit) || isKeywordUsedAsIdent(peek(state).kind)) && state.pos + 1 < state.tokens.length && state.tokens[state.pos + 1].kind === TK.Colon) {
+      // Conditional entry: (key: value) if(cond)
+      const innerEntry = parseObjectEntry(state, commentIdx)
+      expect(state, TK.RParen)
+      // Check for trailing if(cond)
+      let conditional: DWNode | null = null
+      if (at(state, TK.KwIf)) {
+        advance(state)
+        if (at(state, TK.LParen)) {
+          advance(state)
+          conditional = parseExpression(state, 0, commentIdx)
+          expect(state, TK.RParen)
+        } else {
+          conditional = parseExpression(state, 0, commentIdx)
+        }
+      }
+      if (innerEntry) {
+        innerEntry.conditional = conditional
+      }
+      return innerEntry
+    }
+    // Not a conditional entry — restore and parse as dynamic key
+    state.pos = saved
     dynamic = true
-    advance(state)
+    advance(state) // consume ( again
     key = parseExpression(state, 0, commentIdx)
     expect(state, TK.RParen)
   } else if (at(state, TK.StringLit)) {
@@ -949,7 +992,24 @@ function parseLambdaParams(state: ParserState): DWParam[] {
       typeAnnotation = consumeTypeAnnotation(state)
     }
 
-    params.push({ kind: 'Param', name, typeAnnotation })
+    // Optional default value: `acc = 0`
+    let defaultValue: string | null = null
+    if (match(state, TK.Eq)) {
+      // Consume default value tokens until , or )
+      const start = state.pos
+      let depth = 0
+      while (!at(state, TK.EOF)) {
+        if (at(state, TK.LParen) || at(state, TK.LBracket) || at(state, TK.LBrace)) depth++
+        else if (at(state, TK.RParen) || at(state, TK.RBracket) || at(state, TK.RBrace)) {
+          if (depth === 0) break
+          depth--
+        } else if (at(state, TK.Comma) && depth === 0) break
+        advance(state)
+      }
+      defaultValue = state.tokens.slice(start, state.pos).map(t => t.value).join('')
+    }
+
+    params.push({ kind: 'Param', name, typeAnnotation, defaultValue } as DWParam)
     if (!match(state, TK.Comma)) break
   }
   return params
