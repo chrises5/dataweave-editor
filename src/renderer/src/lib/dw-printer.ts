@@ -384,8 +384,12 @@ export function printDoc(node: DWNode): Doc {
           const comments = elseIf.leadingComments ?? []
           // Print without leading comments (we handle them ourselves)
           const stripped = { ...elseIf, leadingComments: undefined }
-          const commentDocs = comments.map(c => concat(text(' '), text(c)))
-          elsePart = concat(text('else'), ...commentDocs, text(' '), printDoc(stripped as DWIfExpr))
+          if (comments.length > 0) {
+            const commentLines = comments.map(c => concat(hardline, text(c)))
+            elsePart = concat(text('else'), ...commentLines, hardline, printDoc(stripped as DWIfExpr))
+          } else {
+            elsePart = concat(text('else '), printDoc(stripped as DWIfExpr))
+          }
         } else {
           elsePart = concat(text('else'), nest(2, concat(line, printDoc(n.else_))))
         }
