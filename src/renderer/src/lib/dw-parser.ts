@@ -707,9 +707,19 @@ function parsePostfix(state: ParserState, node: DWNode, commentIdx: { value: num
         } as DWSelectorExpr
         continue
       }
-      // .ident or .keyword-as-ident
+      // .ident, .keyword-as-ident, or ."string" (quoted selector)
       const sel = peek(state)
       if (sel.kind === TK.Ident || isKeywordUsedAsIdent(sel.kind)) {
+        advance(state)
+        node = {
+          kind: 'SelectorExpr',
+          expr: node,
+          selector: sel.value,
+          selectorKind: 'dot',
+        } as DWSelectorExpr
+        continue
+      }
+      if (sel.kind === TK.StringLit) {
         advance(state)
         node = {
           kind: 'SelectorExpr',
