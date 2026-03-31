@@ -22,14 +22,14 @@ export function formatDataWeave(src: string): string {
   try {
     const ast = parse(src)
     const doc = printDoc(ast)
-    const result = render(doc, 80)
+    const result = render(doc, 120)
     // Ensure trailing newline
     return result.endsWith('\n') ? result : result + '\n'
   } catch (e) {
-    if (e instanceof ParseError) {
-      // Bail out: return original source unchanged
-      return src
-    }
-    throw e
+    // Log all errors to console so we can diagnose formatting failures
+    console.warn('[DW Formatter] Failed to format:', e instanceof ParseError
+      ? `ParseError at L${(e as any).line}:${(e as any).col}: ${(e as any).message}`
+      : String(e))
+    return src
   }
 }

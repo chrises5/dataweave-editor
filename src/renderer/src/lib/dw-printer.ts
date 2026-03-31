@@ -377,14 +377,17 @@ export function printDoc(node: DWNode): Doc {
       const n = node as DWIfExpr
       let inner: Doc
       if (n.else_ !== null) {
+        // else if → keep on same line
+        const elsePart = (n.else_ as DWIfExpr).kind === 'IfExpr'
+          ? concat(text('else '), printDoc(n.else_))
+          : concat(text('else'), nest(2, concat(line, printDoc(n.else_))))
         inner = group(concat(
           text('if ('),
           printDoc(n.cond),
           text(')'),
           nest(2, concat(line, printDoc(n.then))),
           line,
-          text('else'),
-          nest(2, concat(line, printDoc(n.else_)))
+          elsePart
         ))
       } else {
         inner = group(concat(
