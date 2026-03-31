@@ -39,6 +39,10 @@ export function App(): React.JSX.Element {
       }),
       window.api.onTabNext(() => useEditorStore.getState().nextTab()),
       window.api.onTabPrev(() => useEditorStore.getState().prevTab()),
+      window.api.onTabSwitch((index: number) => {
+        const { sessionOrder, switchSession } = useEditorStore.getState()
+        if (index < sessionOrder.length) switchSession(sessionOrder[index])
+      }),
     ]
     return () => cleanups.forEach((c) => c())
   }, [])
@@ -97,8 +101,6 @@ export function App(): React.JSX.Element {
       ) : (
         <div className="flex-1 min-h-0">
           <Allotment
-            key={activeSessionId}
-            defaultSizes={panelSizes.length === 3 ? panelSizes : undefined}
             onDragEnd={handleDragEnd}
           >
             <Allotment.Pane minSize={200}>

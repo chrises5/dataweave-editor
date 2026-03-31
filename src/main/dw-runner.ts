@@ -44,20 +44,42 @@ const MIME_TO_EXT: Record<string, string> = {
   'multipart/form-data': '.multipart',
 }
 
-export async function getDwPath(): Promise<string> {
+const DW_SEARCH_PATHS = [
+  '/opt/homebrew/bin/dw',
+  '/usr/local/bin/dw',
+  join(process.env.HOME ?? '', '.local/bin/dw'),
+]
+
+export async function getDwPath(): Promise<string | null> {
   if (!app.isPackaged) {
     return 'dw'
   }
+  // Check bundled binary first
   const bundled = join(process.resourcesPath, 'bin', 'dw')
   try {
     await access(bundled, constants.X_OK)
     return bundled
   } catch {
-    return 'dw'
+    // Search common install locations
+    for (const p of DW_SEARCH_PATHS) {
+      try {
+        await access(p, constants.X_OK)
+        return p
+      } catch { /* continue */ }
+    }
+    return null
   }
 }
 
 export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
+  const dwPath = await getDwPath()
+  if (!dwPath) {
+    return {
+      ok: false,
+      error: 'DataWeave CLI (dw) not found.\n\nInstall it with: brew install mulesoft/data-weave-cli/dw\n\nOr download from: https://github.com/mulesoft/data-weave-cli'
+    }
+  }
+
   const dir = await mkdtemp(join(tmpdir(), 'dw-'))
   const scriptPath = join(dir, 'transform.dwl')
   try {
@@ -80,7 +102,6 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
       inputArgs.push('-i', `${slot.name}=${inputPath}`)
     }
 
-    const dwPath = await getDwPath()
     const outputPath = join(dir, 'output.txt')
     const { stdout } = await execFileAsync(
       dwPath,

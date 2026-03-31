@@ -1,8 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { X } from 'lucide-react'
 import { useEditorStore } from '../store'
 import { InputSlotComponent } from './InputSlotComponent'
 import { Button } from './ui/button'
+import { MIME_OPTIONS } from '../types'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from './ui/select'
 
 export function InputPanel(): React.JSX.Element {
   const activeSessionId = useEditorStore((s) => s.activeSessionId)
@@ -49,10 +57,39 @@ export function InputPanel(): React.JSX.Element {
     setEditingId(null)
   }
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const dragState = useRef({ dragging: false, startX: 0, scrollLeft: 0 })
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    const el = scrollRef.current
+    if (!el) return
+    dragState.current = { dragging: true, startX: e.clientX, scrollLeft: el.scrollLeft }
+  }, [])
+
+  const onMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragState.current.dragging) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollLeft = dragState.current.scrollLeft - (e.clientX - dragState.current.startX)
+  }, [])
+
+  const onMouseUp = useCallback(() => {
+    dragState.current.dragging = false
+  }, [])
+
   return (
     <div className="flex flex-col h-full">
       {/* Tab bar with slot names + Add button */}
-      <div className="flex items-center gap-1 px-3 h-10 border-b border-border bg-muted/30 overflow-x-auto">
+      <div className="flex items-center h-10 border-b border-border bg-muted/50 shrink-0">
+        <div
+          ref={scrollRef}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          className="flex items-center gap-1 px-3 overflow-x-auto min-w-0 flex-1 cursor-grab active:cursor-grabbing select-none"
+          style={{ scrollbarWidth: 'none' }}
+        >
         {inputs.map((slot) => (
           <div
             key={slot.id}
@@ -95,6 +132,26 @@ export function InputPanel(): React.JSX.Element {
         >
           +
         </Button>
+        </div>
+        {activeSlot && (
+          <div className="shrink-0 px-2">
+            <Select
+              value={activeSlot.mimeType}
+              onValueChange={(v) => updateInput(activeSlot.id, { mimeType: v as string })}
+            >
+              <SelectTrigger size="sm" className="h-6 w-auto text-xs gap-1 px-2">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {MIME_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {/* Active slot content */}

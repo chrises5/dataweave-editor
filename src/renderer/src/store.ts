@@ -227,7 +227,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
             ...state.sessions,
             [id]: {
               ...session,
-              inputs: [...session.inputs, { id: newId, name, mimeType: 'application/json', content: '' }],
+              inputs: [...session.inputs, { id: newId, name, mimeType: 'application/json', content: '{}' }],
             },
           },
         }

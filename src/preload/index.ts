@@ -37,6 +37,11 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('tab:prev', listener)
     return (): void => { ipcRenderer.removeListener('tab:prev', listener) }
   },
+  onTabSwitch: (cb: (index: number) => void) => {
+    const listener = (_e: unknown, index: number): void => cb(index)
+    ipcRenderer.on('tab:switch', listener)
+    return (): void => { ipcRenderer.removeListener('tab:switch', listener) }
+  },
   // Theme persistence
   getTheme: () => ipcRenderer.invoke('theme:get'),
   setTheme: (theme: string) => ipcRenderer.invoke('theme:set', theme),

@@ -1,16 +1,8 @@
 import React, { useState, useCallback } from 'react'
 import { Editor } from '@monaco-editor/react'
 import { useEditorStore } from '../store'
-import { MIME_OPTIONS } from '../types'
 import type { InputSlot } from '../types'
 import { Button } from './ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
 
 interface Props {
   slot: InputSlot
@@ -73,34 +65,16 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
         </div>
       )}
 
-      {/* Slot toolbar: MIME selector */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/50">
-        <Select
-          value={slot.mimeType}
-          onValueChange={(v) => updateInput(slot.id, { mimeType: v as string })}
-        >
-          <SelectTrigger className="h-7 w-[140px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {MIME_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value} className="text-xs">
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {slot.filePath && (
-          <>
-            <span className="text-xs text-muted-foreground truncate max-w-[120px]" title={slot.fileName}>
-              {slot.fileName}
-            </span>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={handleClearFile}>
-              Clear
-            </Button>
-          </>
-        )}
-      </div>
+      {slot.filePath && (
+        <div className="flex items-center gap-2 px-2 h-6 border-b border-border bg-muted/30">
+          <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={slot.fileName}>
+            {slot.fileName}
+          </span>
+          <Button variant="ghost" size="sm" className="h-5 text-xs px-1.5" onClick={handleClearFile}>
+            Clear
+          </Button>
+        </div>
+      )}
 
       {/* Content area: Monaco editor (always shown) */}
       <div className="flex-1">

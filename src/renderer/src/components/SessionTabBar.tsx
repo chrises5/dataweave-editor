@@ -30,7 +30,7 @@ export function SessionTabBar(): React.JSX.Element {
   }
 
   return (
-    <div className="flex items-center gap-1 px-2 h-9 border-b border-border bg-muted/30 overflow-x-auto shrink-0">
+    <div className="flex items-center gap-1 px-2 h-7 border-b border-border bg-muted overflow-x-auto shrink-0">
       {sessionOrder.map((id) => {
         const session = sessions[id]
         if (!session) return null
@@ -40,7 +40,7 @@ export function SessionTabBar(): React.JSX.Element {
             key={id}
             onClick={() => switchSession(id)}
             onDoubleClick={() => setEditingId(id)}
-            className={`flex items-center gap-1 px-3 py-1 text-xs rounded-t border border-b-0 border-border whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-t border border-b-0 border-border whitespace-nowrap cursor-pointer ${
               isActive
                 ? 'bg-background font-semibold'
                 : 'bg-muted/50 text-muted-foreground hover:bg-muted'
@@ -73,14 +73,14 @@ export function SessionTabBar(): React.JSX.Element {
           </div>
         )
       })}
-      <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={addSession}>
+      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[11px]" onClick={addSession}>
         +
       </Button>
       <div className="ml-auto flex items-center">
         <Button
           variant="ghost"
           size="sm"
-          className="h-6 w-6 p-0"
+          className="h-5 w-5 p-0"
           onClick={toggleTheme}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >

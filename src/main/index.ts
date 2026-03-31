@@ -101,6 +101,7 @@ ipcMain.handle('fs:readFile', async (_event, filePath: string) => {
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
+    title: 'DataWeave Editor',
     width: 1400,
     height: 900,
     show: false,
@@ -116,6 +117,31 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  // Catch shortcuts before Monaco swallows them
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return
+    const mod = input.meta || input.control
+    let handled = true
+    if (mod && input.key === 'Enter') {
+      mainWindow.webContents.send('shortcut:run')
+    } else if (mod && !input.shift && input.key === 't') {
+      mainWindow.webContents.send('tab:new')
+    } else if (mod && !input.shift && input.key === 'w') {
+      mainWindow.webContents.send('tab:close')
+    } else if (mod && input.shift && input.key === ']') {
+      mainWindow.webContents.send('tab:next')
+    } else if (mod && input.shift && input.key === '[') {
+      mainWindow.webContents.send('tab:prev')
+    } else if (mod && input.shift && input.key === 'D') {
+      mainWindow.webContents.send('theme:toggle')
+    } else if (mod && !input.shift && input.key >= '1' && input.key <= '9') {
+      mainWindow.webContents.send('tab:switch', parseInt(input.key) - 1)
+    } else {
+      handled = false
+    }
+    if (handled) event.preventDefault()
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
