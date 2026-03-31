@@ -178,6 +178,7 @@ export interface DWSelectorExpr {
   expr: DWNode
   selector: string
   selectorKind: 'dot' | 'dotdot' | 'bracket' | 'filter' | 'metadata'
+  indexExpr?: DWNode
   leadingComments?: string[]
   trailingComments?: string[]
 }

@@ -372,16 +372,13 @@ describe('Selectors', () => {
 
   it('bracket selector: payload.items[0]', () => {
     const doc = parse('payload.items[0]')
-    // After parsing: payload.items is SelectorExpr, then [0] is FunctionCall (bracket access)
-    // The bracket selector is modeled as FunctionCall in our parser
-    expect(doc.body.kind).toBe('FunctionCall')
-    if (doc.body.kind === 'FunctionCall') {
-      expect(doc.body.callee.kind).toBe('SelectorExpr')
-      expect(doc.body.args.length).toBe(1)
-      if (doc.body.args[0].kind === 'Literal') {
-        expect(doc.body.args[0].value).toBe('0')
-      }
-    }
+    expect(doc.body.kind).toBe('SelectorExpr')
+    const sel = doc.body as any
+    expect(sel.selectorKind).toBe('bracket')
+    expect(sel.expr.kind).toBe('SelectorExpr')
+    expect(sel.indexExpr).toBeDefined()
+    expect(sel.indexExpr.kind).toBe('Literal')
+    expect(sel.indexExpr.value).toBe('0')
   })
 
   it('dotdot selector: payload..name', () => {

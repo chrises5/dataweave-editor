@@ -405,16 +405,15 @@ export function printDoc(node: DWNode): Doc {
     // ── DoExpr ──────────────────────────────────────────────────────────────
     case 'DoExpr': {
       const n = node as DWDoExpr
+      const hasDirectives = n.header.directives.length > 0
+      const bodyParts: Doc[] = []
+      if (hasDirectives) {
+        bodyParts.push(hardline, printDoc(n.header), hardline, text('---'))
+      }
+      bodyParts.push(hardline, printDoc(n.body))
       const inner = concat(
         text('do {'),
-        nest(2, concat(
-          hardline,
-          printDoc(n.header),
-          hardline,
-          text('---'),
-          hardline,
-          printDoc(n.body)
-        )),
+        nest(2, concat(...bodyParts)),
         hardline,
         text('}')
       )
@@ -452,11 +451,10 @@ export function printDoc(node: DWNode): Doc {
     // ── BinaryExpr ──────────────────────────────────────────────────────────
     case 'BinaryExpr': {
       const n = node as DWBinaryExpr
+      // When the group breaks, indent the continuation and keep op on left line
       const inner = group(concat(
         printDoc(n.left),
-        text(' '),
-        text(n.op),
-        line,
+        text(' ' + n.op + ' '),
         printDoc(n.right)
       ))
       return wrapWithComments(n, inner)
@@ -483,8 +481,12 @@ export function printDoc(node: DWNode): Doc {
           inner = concat(printDoc(n.expr), text('..'), text(n.selector))
           break
         case 'bracket':
-          // bracket access: expr[selector]
-          inner = concat(printDoc(n.expr), text('['), text(n.selector), text(']'))
+          // bracket access: expr[index]
+          if (n.indexExpr) {
+            inner = concat(printDoc(n.expr), text('['), printDoc(n.indexExpr), text(']'))
+          } else {
+            inner = concat(printDoc(n.expr), text('['), text(n.selector), text(']'))
+          }
           break
         case 'filter':
           inner = concat(printDoc(n.expr), text('[?('), text(n.selector), text(')]'))

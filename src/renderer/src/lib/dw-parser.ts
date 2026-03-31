@@ -433,10 +433,17 @@ function parseImportDirective(state: ParserState): DWImportDirective {
       break
     }
     if (t.line > startLine + 1) break
-    parts.push(advance(state).value)
+    const val = advance(state).value
+    // Don't add space before/after colons (for :: namespace separator)
+    if (val === ':' || (parts.length > 0 && parts[parts.length - 1] === ':')) {
+      parts.push(val)
+    } else {
+      if (parts.length > 0) parts.push(' ')
+      parts.push(val)
+    }
   }
 
-  return { kind: 'ImportDirective', raw: parts.join(' ') }
+  return { kind: 'ImportDirective', raw: parts.join('') }
 }
 
 // ─── Type Annotation Consumption ─────────────────────────────────────────────
@@ -731,28 +738,27 @@ function parsePostfix(state: ParserState, node: DWNode, commentIdx: { value: num
     }
 
     if (tok.kind === TK.LBracket) {
-      // Bracket selector: expr[index]
-      // Model as FunctionCall with callee=node to preserve index expression
-      // The printer will use callee[args[0]] notation
       advance(state)
-      const indexExpr = parseExpression(state, 0, commentIdx)
-      expect(state, TK.RBracket)
-      // Use FunctionCall to carry the index expression through the AST
-      // (DWSelectorExpr.selector is a string so can't hold a DWNode)
-      node = {
-        kind: 'FunctionCall',
-        callee: node,
-        args: [indexExpr],
-      } as unknown as DWNode
-      // Mark it as a bracket access via a special wrapping:
-      // Actually use SelectorExpr with empty selector and bracket kind,
-      // but we need a way to store the index. The cleanest solution is
-      // to use FunctionCall. The printer must detect "bracket access" by
-      // context — or we can use EnclosedExpr to wrap:
-      // { kind: 'SelectorExpr', expr: node, selector: ..., selectorKind: 'bracket' }
-      // Since selector is a string, we serialise the expression to a placeholder.
-      // For the parser's purposes (used by the formatter), we need to roundtrip.
-      // Use FunctionCall as bracket-access carrier — noted for printer.
+      if (at(state, TK.RBracket)) {
+        // Empty bracket: expr[]
+        advance(state)
+        node = {
+          kind: 'SelectorExpr',
+          expr: node,
+          selector: '',
+          selectorKind: 'bracket',
+        } as DWSelectorExpr
+      } else {
+        const indexExpr = parseExpression(state, 0, commentIdx)
+        expect(state, TK.RBracket)
+        node = {
+          kind: 'SelectorExpr',
+          expr: node,
+          selector: '',
+          selectorKind: 'bracket',
+          indexExpr,
+        } as DWSelectorExpr
+      }
       continue
     }
 
