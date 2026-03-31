@@ -6,3 +6,4 @@ out
 *.log*
 .planning
 *.tsbuildinfo
+spike/
