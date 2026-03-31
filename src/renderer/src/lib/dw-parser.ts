@@ -512,8 +512,7 @@ function parseExpression(
         if (!match(state, TK.Comma)) break
       }
       expect(state, TK.RParen)
-      const body = parseExpression(state, 0, commentIdx)
-      left = { kind: 'UsingExpr', bindings, body } as DWUsingExpr
+      left = { kind: 'UsingExpr', bindings, body: left } as DWUsingExpr
       continue
     }
 
@@ -1004,10 +1003,26 @@ function parseMatchCase(
     return { kind: 'MatchCase', pattern, guard: null, body }
   }
 
+  if (at(state, TK.KwElse)) {
+    advance(state)
+    expect(state, TK.Arrow)
+    const body = parseExpression(state, 0, commentIdx)
+    const pattern: DWIdentifier = { kind: 'Identifier', name: 'else' }
+    return { kind: 'MatchCase', pattern, guard: null, body }
+  }
+
   if (!at(state, TK.KwCase)) return null
   expect(state, TK.KwCase)
 
-  const pattern = parseExpression(state, 0, commentIdx)
+  let pattern: DWNode
+  // `case is TypeName` — type-check pattern
+  if (at(state, TK.KwIs)) {
+    advance(state)
+    const typeTok = expect(state, TK.Ident)
+    pattern = { kind: 'Identifier', name: `is ${typeTok.value}` } as DWIdentifier
+  } else {
+    pattern = parseExpression(state, 0, commentIdx)
+  }
 
   let guard: DWNode | null = null
   if (at(state, TK.KwIf)) {
@@ -1053,6 +1068,8 @@ function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExp
     }
 
     const header: DWHeader = { kind: 'Header', directives }
+    // Consume optional --- separator inside do block
+    if (at(state, TK.TripleDash)) advance(state)
     const body = parseExpression(state, 0, commentIdx)
     expect(state, TK.RBrace)
     return { kind: 'DoExpr', header, body }
