@@ -377,10 +377,18 @@ export function printDoc(node: DWNode): Doc {
       const n = node as DWIfExpr
       let inner: Doc
       if (n.else_ !== null) {
-        // else if → keep on same line
-        const elsePart = (n.else_ as DWIfExpr).kind === 'IfExpr'
-          ? concat(text('else '), printDoc(n.else_))
-          : concat(text('else'), nest(2, concat(line, printDoc(n.else_))))
+        // else if → keep on same line, with comments between else and if
+        let elsePart: Doc
+        if ((n.else_ as DWIfExpr).kind === 'IfExpr') {
+          const elseIf = n.else_ as DWIfExpr
+          const comments = elseIf.leadingComments ?? []
+          // Print without leading comments (we handle them ourselves)
+          const stripped = { ...elseIf, leadingComments: undefined }
+          const commentDocs = comments.map(c => concat(text(' '), text(c)))
+          elsePart = concat(text('else'), ...commentDocs, text(' '), printDoc(stripped as DWIfExpr))
+        } else {
+          elsePart = concat(text('else'), nest(2, concat(line, printDoc(n.else_))))
+        }
         inner = group(concat(
           text('if ('),
           printDoc(n.cond),
