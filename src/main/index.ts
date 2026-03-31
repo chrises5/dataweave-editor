@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, Menu, dialog } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { executeDw, type ExecutePayload } from './dw-runner'
+import { executeDw, validateDw, type ExecutePayload } from './dw-runner'
 import icon from '../../resources/icon.png?asset'
 import { Conf } from 'electron-conf/main'
 
@@ -50,6 +50,10 @@ const themeStore = new Conf<{ theme: 'light' | 'dark' }>({
 // Register IPC handlers before app.whenReady() to avoid race conditions
 ipcMain.handle('dw:execute', async (_event, payload: ExecutePayload) => {
   return executeDw(payload)
+})
+
+ipcMain.handle('dw:validate', async (_event, script: string, inputNames: string[]) => {
+  return validateDw(script, inputNames)
 })
 
 ipcMain.handle('sessions:get', () => {

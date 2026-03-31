@@ -37,8 +37,20 @@ export interface PersistedMultiSessionStore {
   activeSessionIndex: number
 }
 
+export interface DwDiagnostic {
+  message: string
+  line: number
+  column: number
+}
+
+export interface DwValidateResult {
+  ok: boolean
+  diagnostics: DwDiagnostic[]
+}
+
 export interface ElectronAPI {
   execute: (payload: ExecutePayload) => Promise<DwResult>
+  validate: (script: string, inputNames: string[]) => Promise<DwValidateResult>
   onRun: (cb: () => void) => () => void
   openFile: () => Promise<{ canceled: boolean; filePaths: string[] }>
   readFile: (filePath: string) => Promise<string>

@@ -38,9 +38,11 @@ interface EditorStore {
   activeSessionId: string
   sessionOrder: string[]
   theme: 'light' | 'dark'
+  autoRun: boolean
 
   // Theme
   toggleTheme: () => void
+  toggleAutoRun: () => void
 
   // Session management
   addSession: () => void
@@ -55,7 +57,7 @@ interface EditorStore {
   addInput: () => void
   removeInput: (id: string) => void
   updateInput: (id: string, patch: Partial<InputSlot>) => void
-  run: () => Promise<void>
+  run: (options?: { silent?: boolean }) => Promise<void>
   setLogs: (logs: string[]) => void
   toggleLogPanel: () => void
 }
@@ -93,12 +95,17 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     activeSessionId: _initial.id,
     sessionOrder: [_initial.id],
     theme: 'light',
+    autoRun: false,
 
     toggleTheme: () => {
       const newTheme = get().theme === 'dark' ? 'light' : 'dark'
       set({ theme: newTheme })
       applyThemeToDOM(newTheme)
       window.api.setTheme(newTheme)
+    },
+
+    toggleAutoRun: () => {
+      set((state) => ({ autoRun: !state.autoRun }))
     },
 
     addSession: () => {
@@ -269,16 +276,19 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       persistSessions()
     },
 
-    run: async () => {
+    run: async (options) => {
+      const silent = options?.silent ?? false
       const { sessions, activeSessionId } = get()
       const session = sessions[activeSessionId]
       const { script, inputs } = session
-      set((state) => ({
-        sessions: {
-          ...state.sessions,
-          [activeSessionId]: { ...state.sessions[activeSessionId], running: true, error: null, output: '' },
-        },
-      }))
+      if (!silent) {
+        set((state) => ({
+          sessions: {
+            ...state.sessions,
+            [activeSessionId]: { ...state.sessions[activeSessionId], running: true, error: null, output: '' },
+          },
+        }))
+      }
       try {
         const payload: ExecutePayload = {
           script,

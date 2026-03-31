@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 contextBridge.exposeInMainWorld('api', {
   execute: (payload: { script: string; inputs: Array<{ name: string; mimeType: string; content: string | null; filePath: string | null }> }) =>
     ipcRenderer.invoke('dw:execute', payload),
+  validate: (script: string, inputNames: string[]) => ipcRenderer.invoke('dw:validate', script, inputNames),
   onRun: (cb: () => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('shortcut:run', listener)

@@ -29,6 +29,17 @@ export interface DwResult {
   error?: string
 }
 
+export interface DwDiagnostic {
+  message: string
+  line: number
+  column: number
+}
+
+export interface DwValidateResult {
+  ok: boolean
+  diagnostics: DwDiagnostic[]
+}
+
 function parseLogLines(raw: string): string[] {
   if (!raw.trim()) return []
   return raw.split(/\n\n+/).map((s) => s.trim()).filter(Boolean)
@@ -71,6 +82,20 @@ export async function getDwPath(): Promise<string | null> {
   }
 }
 
+const HEADER_RE = /^(%dw\s[\d.]+\s*\n(?:(?:output|input|import|ns)\b[^\n]*\n)*)(?=---|\S)/m
+
+const PREAMBLE = 'fun p(s)=s\n'
+const PREAMBLE_LINES = PREAMBLE.split('\n').length - 1 // 1
+
+function injectPreamble(script: string): { script: string; injected: boolean } {
+  const match = script.match(HEADER_RE)
+  if (match) {
+    const headerEnd = match.index! + match[0].length
+    return { script: script.slice(0, headerEnd) + PREAMBLE + script.slice(headerEnd), injected: true }
+  }
+  return { script, injected: false }
+}
+
 export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
   const dwPath = await getDwPath()
   if (!dwPath) {
@@ -80,10 +105,11 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
     }
   }
 
+  const prepared = injectPreamble(payload.script)
   const dir = await mkdtemp(join(tmpdir(), 'dw-'))
   const scriptPath = join(dir, 'transform.dwl')
   try {
-    await writeFile(scriptPath, payload.script, 'utf8')
+    await writeFile(scriptPath, prepared.script, 'utf8')
 
     // Always provide a correlationId variable (UUID)
     const correlationIdPath = join(dir, 'correlationId.txt')
@@ -106,7 +132,7 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
     const { stdout } = await execFileAsync(
       dwPath,
       ['run', ...inputArgs, '-f', scriptPath, '-o', outputPath],
-      { timeout: 30_000, encoding: 'utf8' }
+      { timeout: 30_000, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }
     )
     const rawLogs = stripAnsi(stdout)
     const output = await readFile(outputPath, 'utf8').catch(() => '')
@@ -114,12 +140,78 @@ export async function executeDw(payload: ExecutePayload): Promise<DwResult> {
   } catch (err: unknown) {
     const anyErr = err as { stderr?: string; message?: string }
     const raw: string = anyErr.stderr ?? anyErr.message ?? String(err)
-    const cleaned = stripAnsi(raw)
-      .split('\n')
-      .filter((line: string) => line.includes('[ERROR]'))
-      .join('\n')
-      .trim()
+    const lines = stripAnsi(raw).split('\n')
+    const firstErrorIdx = lines.findIndex((line: string) => line.includes('[ERROR]'))
+    let cleaned = firstErrorIdx >= 0
+      ? lines.slice(firstErrorIdx).join('\n').trim()
+      : raw.trim()
+    if (prepared.injected) {
+      cleaned = adjustErrorLineNumbers(cleaned, -PREAMBLE_LINES)
+    }
     return { ok: false, error: cleaned || stripAnsi(raw) }
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+function adjustErrorLineNumbers(text: string, offset: number): string {
+  // Adjust "(line: N, column:M)" references
+  return text.replace(/\(line:\s*(\d+)/g, (_, n) => `(line: ${Math.max(1, parseInt(n, 10) + offset)}`)
+    // Adjust "N| code" source line references
+    .replace(/^(\d+)\|/gm, (_, n) => `${Math.max(1, parseInt(n, 10) + offset)}|`)
+}
+
+const LOC_RE = /\(line:\s*(\d+),\s*column:\s*(\d+)\)/
+
+function parseDiagnostics(raw: string): DwDiagnostic[] {
+  const cleaned = stripAnsi(raw)
+  // Split into individual error blocks separated by the [ERROR] prefix
+  const blocks = cleaned.split(/(?=\[ERROR])/).filter((b) => b.includes('[ERROR]'))
+  const diagnostics: DwDiagnostic[] = []
+
+  for (const block of blocks) {
+    const firstLine = block.split('\n')[0]
+    const msg = firstLine.replace(/^\[ERROR]\s*/, '').trim()
+    if (!msg) continue
+
+    // Find location line within this block
+    const locMatch = block.match(LOC_RE)
+    diagnostics.push({
+      message: msg,
+      line: locMatch ? parseInt(locMatch[1], 10) : 1,
+      column: locMatch ? parseInt(locMatch[2], 10) : 1,
+    })
+  }
+
+  return diagnostics
+}
+
+export async function validateDw(script: string, inputNames: string[]): Promise<DwValidateResult> {
+  const dwPath = await getDwPath()
+  if (!dwPath) return { ok: true, diagnostics: [] }
+
+  const prepared = injectPreamble(script)
+  const dir = await mkdtemp(join(tmpdir(), 'dw-val-'))
+  const scriptPath = join(dir, 'transform.dwl')
+  try {
+    await writeFile(scriptPath, prepared.script, 'utf8')
+    const inputArgs = inputNames.flatMap((name) => ['-i', name])
+    await execFileAsync(dwPath, ['validate', ...inputArgs, '-f', scriptPath], {
+      timeout: 10_000,
+      encoding: 'utf8',
+      maxBuffer: 10 * 1024 * 1024,
+    })
+    return { ok: true, diagnostics: [] }
+  } catch (err: unknown) {
+    const anyErr = err as { stderr?: string; message?: string }
+    const raw: string = anyErr.stderr ?? anyErr.message ?? String(err)
+    const diagnostics = parseDiagnostics(raw)
+    if (prepared.injected) {
+      for (const d of diagnostics) {
+        d.line = Math.max(1, d.line - PREAMBLE_LINES)
+      }
+    }
+    return { ok: diagnostics.length === 0, diagnostics }
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {})
   }
