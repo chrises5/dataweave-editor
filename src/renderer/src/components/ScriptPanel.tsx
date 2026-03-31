@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
 import { DATAWEAVE_LANGUAGE_ID, dwLanguageConfig, dwMonarchTokens, registerDwCompletionProvider } from '../lib/dataweave-lang'
+import { formatDataWeave } from '../lib/dataweave-formatter-v2'
 
 function registerDataWeaveLanguage(monaco: Monaco): void {
   if (monaco.languages.getLanguages().some((l) => l.id === DATAWEAVE_LANGUAGE_ID)) return
@@ -98,6 +99,15 @@ export function ScriptPanel(): React.JSX.Element {
     (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => {
       monacoRef.current = monaco
       editorRef.current = ed
+      // Cmd+Shift+F / Ctrl+Shift+F to format DataWeave
+      // eslint-disable-next-line no-bitwise
+      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
+        const model = ed.getModel()
+        if (!model) return
+        const formatted = formatDataWeave(model.getValue())
+        const fullRange = model.getFullModelRange()
+        ed.executeEdits('format', [{ range: fullRange, text: formatted }])
+      })
     },
     []
   )

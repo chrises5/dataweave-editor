@@ -8,6 +8,7 @@
 // Doc algebra:
 //   text(s)         — literal text
 //   line            — newline+indent in break mode, single space in flat mode
+//   softline        — newline+indent in break mode, EMPTY in flat mode
 //   hardline        — always newline+indent (for header separators, directives)
 //   concat(...)     — sequential composition
 //   nest(n, doc)    — increase indent by n for doc
@@ -51,6 +52,7 @@ export type Doc =
   | { kind: 'concat'; parts: Doc[] }
   | { kind: 'nest'; indent: number; doc: Doc }
   | { kind: 'line' }                          // newline+indent OR space when flat
+  | { kind: 'softline' }                      // newline+indent OR empty when flat
   | { kind: 'hardline' }                      // always newline (for header directives)
   | { kind: 'group'; doc: Doc }               // try flat first; if too wide, break
 
@@ -58,6 +60,7 @@ export type Doc =
 
 export const text = (s: string): Doc => s
 export const line: Doc = { kind: 'line' }
+export const softline: Doc = { kind: 'softline' }
 export const hardline: Doc = { kind: 'hardline' }
 export const concat = (...parts: Doc[]): Doc => ({ kind: 'concat', parts })
 export const nest = (indent: number, doc: Doc): Doc => ({ kind: 'nest', indent, doc })
@@ -97,6 +100,8 @@ export function measureFlat(doc: Doc): number {
       return measureFlat(doc.doc)
     case 'line':
       return 1 // space in flat mode
+    case 'softline':
+      return 0 // empty in flat mode
     case 'hardline':
       return Infinity // cannot be flat
     case 'group':
@@ -142,6 +147,14 @@ export function render(doc: Doc, width: number = 80): string {
           if (mode === 'flat') {
             output += ' '
             col += 1
+          } else {
+            output += '\n' + ' '.repeat(indent)
+            col = indent
+          }
+          break
+        case 'softline':
+          if (mode === 'flat') {
+            // empty — no output
           } else {
             output += '\n' + ' '.repeat(indent)
             col = indent
@@ -248,21 +261,28 @@ export function printDoc(node: DWNode): Doc {
     case 'Document': {
       const n = node as DWDocument
       let inner: Doc
+
       if (n.header !== null) {
+        // Header present means source started with %dw 2.0
         inner = concat(
+          text('%dw 2.0'),
+          hardline,
           printDoc(n.header),
           hardline,
           text('---'),
           hardline,
           printDoc(n.body)
         )
+      } else if (n.separator) {
+        // No header, but source had a --- separator (body-only form with separator)
+        inner = concat(
+          text('---'),
+          hardline,
+          printDoc(n.body)
+        )
       } else {
-        // No header — body only (if there's a separator, still emit it)
-        if (n.separator) {
-          inner = concat(text('---'), hardline, printDoc(n.body))
-        } else {
-          inner = printDoc(n.body)
-        }
+        // Pure expression, no header or separator
+        inner = printDoc(n.body)
       }
       return wrapWithComments(n, inner)
     }
@@ -482,11 +502,12 @@ export function printDoc(node: DWNode): Doc {
     case 'FunctionCall': {
       const n = node as DWFunctionCall
       const argDocs = n.args.map(printDoc)
+      // Use softline so args don't get a leading space in flat mode
       const inner = group(concat(
         printDoc(n.callee),
         text('('),
-        nest(2, concat(line, join(concat(text(','), line), argDocs))),
-        line,
+        nest(2, concat(softline, join(concat(text(','), line), argDocs))),
+        softline,
         text(')')
       ))
       return wrapWithComments(n, inner)
@@ -500,10 +521,11 @@ export function printDoc(node: DWNode): Doc {
         inner = text('{}')
       } else {
         const entryDocs = n.entries.map(printEntry)
+        // Use softline so {a: 1} stays tight in flat mode (no leading space)
         inner = group(concat(
           text('{'),
-          nest(2, concat(line, join(concat(text(','), line), entryDocs))),
-          line,
+          nest(2, concat(softline, join(concat(text(','), line), entryDocs))),
+          softline,
           text('}')
         ))
       }
@@ -518,10 +540,11 @@ export function printDoc(node: DWNode): Doc {
         inner = text('[]')
       } else {
         const elemDocs = n.elements.map(printDoc)
+        // Use softline so [1, 2, 3] stays tight in flat mode
         inner = group(concat(
           text('['),
-          nest(2, concat(line, join(concat(text(','), line), elemDocs))),
-          line,
+          nest(2, concat(softline, join(concat(text(','), line), elemDocs))),
+          softline,
           text(']')
         ))
       }
