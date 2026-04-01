@@ -49,5 +49,5 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 09-01-PLAN.md — Settings persistence layer, IPC channels, Zustand state, and keybindings
+- [x] 09-01-PLAN.md — Settings persistence layer, IPC channels, Zustand state, and keybindings
 - [ ] 09-02-PLAN.md — Settings dialog UI, editor wiring, and tooltip bug fix
