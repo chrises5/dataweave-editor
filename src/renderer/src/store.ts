@@ -40,6 +40,21 @@ interface EditorStore {
   theme: 'light' | 'dark'
   autoRun: boolean
 
+  // Settings (persisted via electron-conf in main process)
+  fontSize: number
+  tabSize: number
+  insertSpaces: boolean
+  autoRunDelay: number
+
+  // Settings actions
+  setFontSize: (size: number) => void
+  setTabSize: (size: number) => void
+  setInsertSpaces: (value: boolean) => void
+  setAutoRunDelay: (delay: number) => void
+  increaseFontSize: () => void
+  decreaseFontSize: () => void
+  resetFontSize: () => void
+
   // Theme
   toggleTheme: () => void
   toggleAutoRun: () => void
@@ -96,6 +111,52 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     sessionOrder: [_initial.id],
     theme: 'light',
     autoRun: false,
+    fontSize: 12,
+    tabSize: 2,
+    insertSpaces: true,
+    autoRunDelay: 1000,
+
+    setFontSize: (size: number) => {
+      const clamped = Math.max(8, Math.min(32, size))
+      set({ fontSize: clamped })
+      window.api.setSettings({ fontSize: clamped })
+    },
+
+    setTabSize: (size: number) => {
+      const clamped = Math.max(1, Math.min(8, size))
+      set({ tabSize: clamped })
+      window.api.setSettings({ tabSize: clamped })
+    },
+
+    setInsertSpaces: (value: boolean) => {
+      set({ insertSpaces: value })
+      window.api.setSettings({ insertSpaces: value })
+    },
+
+    setAutoRunDelay: (delay: number) => {
+      const clamped = Math.max(200, Math.min(5000, Math.round(delay / 100) * 100))
+      set({ autoRunDelay: clamped })
+      window.api.setSettings({ autoRunDelay: clamped })
+    },
+
+    increaseFontSize: () => {
+      const current = get().fontSize
+      const next = Math.min(32, current + 1)
+      set({ fontSize: next })
+      window.api.setSettings({ fontSize: next })
+    },
+
+    decreaseFontSize: () => {
+      const current = get().fontSize
+      const next = Math.max(8, current - 1)
+      set({ fontSize: next })
+      window.api.setSettings({ fontSize: next })
+    },
+
+    resetFontSize: () => {
+      set({ fontSize: 12 })
+      window.api.setSettings({ fontSize: 12 })
+    },
 
     toggleTheme: () => {
       const newTheme = get().theme === 'dark' ? 'light' : 'dark'
@@ -371,6 +432,21 @@ export async function hydrateFromPersistence(): Promise<void> {
     const theme = savedTheme === 'dark' ? 'dark' : 'light'
     useEditorStore.setState({ theme })
     applyThemeToDOM(theme)
+
+    // Load settings
+    try {
+      const settings = await window.api.getSettings()
+      if (settings) {
+        useEditorStore.setState({
+          fontSize: settings.fontSize ?? 12,
+          tabSize: settings.tabSize ?? 2,
+          insertSpaces: settings.insertSpaces ?? true,
+          autoRunDelay: settings.autoRunDelay ?? 1000,
+        })
+      }
+    } catch {
+      // use defaults silently
+    }
 
     const saved = await window.api.getSessions()
 
