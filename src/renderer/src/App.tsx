@@ -47,6 +47,16 @@ export function App(): React.JSX.Element {
     return () => cleanups.forEach((c) => c())
   }, [])
 
+  // Font size keybind listener (Cmd+=/Cmd+-/Cmd+0 from main process menu)
+  useEffect(() => {
+    return window.api.onFontSizeChange((action: string) => {
+      const store = useEditorStore.getState()
+      if (action === 'increase') store.increaseFontSize()
+      else if (action === 'decrease') store.decreaseFontSize()
+      else if (action === 'reset') store.resetFontSize()
+    })
+  }, [])
+
   // Hydration
   useEffect(() => {
     hydrateFromPersistence().then(() => {

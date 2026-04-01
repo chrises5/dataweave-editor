@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { X, Sun, Moon } from 'lucide-react'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
+import { SettingsDialog } from './SettingsDialog'
 
 export function SessionTabBar(): React.JSX.Element {
   const sessionOrder = useEditorStore((s) => s.sessionOrder)
@@ -76,7 +77,8 @@ export function SessionTabBar(): React.JSX.Element {
       <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[11px]" onClick={addSession}>
         +
       </Button>
-      <div className="ml-auto flex items-center">
+      <div className="ml-auto flex items-center gap-1">
+        <SettingsDialog />
         <Button
           variant="ghost"
           size="sm"
