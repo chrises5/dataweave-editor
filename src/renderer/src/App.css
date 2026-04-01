@@ -129,22 +129,10 @@
     }
 }
 
-/* Fix: Monaco find widget button tooltip flicker (D-16)
- * Monaco's hoverService creates .monaco-hover widgets positioned at the pointer.
- * On small 22x22 find-widget buttons, the hover overlaps the button, causing
- * mouseout → dismiss → mousein → show loop. Two fixes:
- * 1) Enlarge button hit area with invisible pseudo-element
- * 2) Make plain-text hover tooltips non-interactive (pointer-events: none)
- *    but preserve interactivity for rich markdown hovers (type info with links) */
-.monaco-editor .find-widget .button {
-  position: relative;
-}
-.monaco-editor .find-widget .button::before {
-  content: '';
-  position: absolute;
-  inset: -4px;
-}
-/* Plain-text tooltips (no markdown) don't need pointer interaction */
-.monaco-hover:not(:has(.markdown-hover)) {
-  pointer-events: none;
+/* Fix: Monaco find widget close button vertical alignment (D-16)
+ * Monaco sets close button to top:5px but the find-actions buttons sit at
+ * ~4.5px (3px margin-top on .find-part + 1.5px centering in 25px container).
+ * Nudge close button up 1px to match. !important to override Monaco inline. */
+.monaco-editor .find-widget > .button.codicon-widget-close {
+  top: 4px !important;
 }

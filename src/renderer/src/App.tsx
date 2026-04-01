@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { Allotment } from 'allotment'
 import 'allotment/dist/style.css'
 import { useEditorStore, hydrateFromPersistence } from './store'
@@ -55,6 +55,29 @@ export function App(): React.JSX.Element {
       else if (action === 'decrease') store.decreaseFontSize()
       else if (action === 'reset') store.resetFontSize()
     })
+  }, [])
+
+  // Fix: Monaco find widget close-button tooltip flicker (D-16)
+  // The close button (.find-widget > .button) sits outside .find-actions and
+  // Monaco's hoverService shows a tooltip that overlaps the tiny 22x22 button,
+  // causing a flicker loop. We suppress mouseover on ONLY the close button
+  // (direct child of .find-widget, not buttons inside .find-actions).
+  useEffect(() => {
+    const suppress = (e: Event): void => { e.stopImmediatePropagation() }
+    const patched = new WeakSet<Element>()
+
+    const patchCloseButtons = (): void => {
+      document.querySelectorAll('.find-widget > .button').forEach((btn) => {
+        if (!patched.has(btn)) {
+          patched.add(btn)
+          btn.addEventListener('mouseover', suppress, true)
+        }
+      })
+    }
+
+    const observer = new MutationObserver(patchCloseButtons)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [])
 
   // Hydration
