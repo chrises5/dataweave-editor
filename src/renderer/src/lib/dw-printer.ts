@@ -421,17 +421,27 @@ export function printDoc(node: DWNode): Doc {
       let inner: Doc
 
       if (n.header !== null) {
-        // Header present means source started with %dw 2.0
-        // Wrap body in group so top-level simple objects can stay flat
-        inner = concat(
-          text('%dw 2.0'),
-          hardline,
-          printDoc(n.header),
-          hardline,
-          text('---'),
-          hardline,
-          group(printDoc(n.body))
-        )
+        if (n.hasVersion) {
+          // Header with %dw version line
+          inner = concat(
+            text('%dw 2.0'),
+            hardline,
+            printDoc(n.header),
+            hardline,
+            text('---'),
+            hardline,
+            group(printDoc(n.body))
+          )
+        } else {
+          // Header without %dw version (e.g. starts with "output ...")
+          inner = concat(
+            printDoc(n.header),
+            hardline,
+            text('---'),
+            hardline,
+            group(printDoc(n.body))
+          )
+        }
       } else if (n.separator) {
         // No header, but source had a --- separator (body-only form with separator)
         inner = concat(
@@ -499,7 +509,27 @@ export function printDoc(node: DWNode): Doc {
     // ── TypeDirective ───────────────────────────────────────────────────────
     case 'TypeDirective': {
       const n = node as DWTypeDirective
-      const inner = concat(text('type '), text(n.name), text(' = '), text(n.value))
+      let inner: Doc
+      if (n.entries && n.entries.length > 0) {
+        // Structured object type: expand entries over multiple lines
+        const entryDocs: Doc[] = n.entries.map((e, i) =>
+          concat(
+            text(e.key + ': ' + e.type),
+            i < n.entries!.length - 1 ? text(',') : ''
+          )
+        )
+        inner = concat(
+          text('type '), text(n.name), text(' = '),
+          group(concat(
+            text('{'),
+            nest(ind, concat(hardline, join(hardline, entryDocs))),
+            hardline,
+            text('}')
+          ))
+        )
+      } else {
+        inner = concat(text('type '), text(n.name), text(' = '), text(n.value))
+      }
       return wrapWithComments(n, inner)
     }
 
@@ -546,10 +576,11 @@ export function printDoc(node: DWNode): Doc {
     // ── MatchExpr ───────────────────────────────────────────────────────────
     case 'MatchExpr': {
       const n = node as DWMatchExpr
+      const keyword = n.op === 'update' ? 'update' : 'match'
       const caseDocs = n.cases.map(printCase)
       const inner = group(concat(
         printDoc(n.expr),
-        text(' match {'),
+        text(` ${keyword} {`),
         nest(ind, concat(hardline, join(hardline, caseDocs))),
         hardline,
         text('}')

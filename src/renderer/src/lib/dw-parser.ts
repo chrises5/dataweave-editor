@@ -393,7 +393,7 @@ function parseTypeDirective(state: ParserState): DWTypeDirective {
   expect(state, TK.Eq)
 
   const startLine = nameTok.line
-  const parts: string[] = []
+  const allTokens: Token[] = []
   let depth = 0
 
   while (!at(state, TK.EOF) && !at(state, TK.TripleDash)) {
@@ -416,10 +416,46 @@ function parseTypeDirective(state: ParserState): DWTypeDirective {
     ) {
       break
     }
-    parts.push(advance(state).value)
+    allTokens.push(advance(state))
   }
 
-  return { kind: 'TypeDirective', name, value: parts.join(' ') }
+  const value = allTokens.map(t => t.value).join(' ')
+
+  // Try to extract structured entries for object types: { key: Type, ... }
+  let entries: { key: string; type: string }[] | undefined
+  if (allTokens.length >= 2 && allTokens[0].kind === TK.LBrace && allTokens[allTokens.length - 1].kind === TK.RBrace) {
+    entries = []
+    let i = 1 // skip opening brace
+    const end = allTokens.length - 1 // before closing brace
+    while (i < end) {
+      // Collect key (may be multiple tokens like `_*?` or `@attr`)
+      const keyParts: string[] = []
+      while (i < end && allTokens[i].kind !== TK.Colon) {
+        if (allTokens[i].kind === TK.Comma) { i++; continue }
+        keyParts.push(allTokens[i].value)
+        i++
+      }
+      if (i >= end || allTokens[i].kind !== TK.Colon) break
+      i++ // skip colon
+      // Collect type (until comma at depth 0 or end)
+      const typeParts: string[] = []
+      let typeDepth = 0
+      while (i < end) {
+        const tok = allTokens[i]
+        if (tok.kind === TK.Lt || tok.kind === TK.LBrace || tok.kind === TK.LBracket || tok.kind === TK.LParen) typeDepth++
+        if (tok.kind === TK.Gt || tok.kind === TK.RBrace || tok.kind === TK.RBracket || tok.kind === TK.RParen) typeDepth--
+        if (typeDepth === 0 && tok.kind === TK.Comma) { i++; break }
+        typeParts.push(tok.value)
+        i++
+      }
+      if (keyParts.length > 0 && typeParts.length > 0) {
+        entries.push({ key: keyParts.join(''), type: typeParts.join(' ') })
+      }
+    }
+    if (entries.length === 0) entries = undefined
+  }
+
+  return { kind: 'TypeDirective', name, value, entries }
 }
 
 function parseNsDirective(state: ParserState): DWNsDirective {
@@ -541,6 +577,7 @@ function parseExpression(
     left = { kind: 'ObjectExpr', entries: [entry] } as DWObjectExpr
   }
 
+
   while (true) {
     const op = peek(state)
 
@@ -573,6 +610,13 @@ function parseExpression(
 
     advance(state)
     const opVal = getOpValue(op)
+
+    // `update { case ... -> ... }` — parse like match body with update-specific patterns
+    if (opVal === 'update' && at(state, TK.LBrace)) {
+      left = parseUpdateBody(state, left, commentIdx)
+      continue
+    }
+
     let right = parseExpression(state, prec, commentIdx) // left-associative
 
     // `as Type {format: "0"}` — consume optional format object after `as`
@@ -659,6 +703,41 @@ function parsePrimary(state: ParserState, commentIdx: { value: number }): DWNode
     }
 
     case TK.Ident: {
+      // Check for implicit object: `ident: value` (not `ident::` namespace)
+      if (
+        state.pos + 1 < state.tokens.length &&
+        state.tokens[state.pos + 1].kind === TK.Colon &&
+        !(state.pos + 2 < state.tokens.length && state.tokens[state.pos + 2].kind === TK.Colon)
+      ) {
+        // Look further back/forward to decide: is this really an implicit object?
+        // Implicit objects appear after operators like ++, in function returns, etc.
+        // NOT in function parameter position (after comma or open paren)
+        // We use a heuristic: if the token before `ident` is an infix operator, `++`, `---`,
+        // opening bracket/paren, comma, `->`, or nothing (start of expression), it's an implicit object.
+        // For safety, only do this when the colon is on the same line as the ident.
+        const identTok = state.tokens[state.pos]
+        const colonTok = state.tokens[state.pos + 1]
+        if (identTok.line === colonTok.line) {
+          // Check context: previous non-consumed token
+          const prevTok = state.pos > 0 ? state.tokens[state.pos - 1] : null
+          const isAfterOperator = !prevTok ||
+            prevTok.kind === TK.PlusPlus ||
+            prevTok.kind === TK.TripleDash ||
+            prevTok.kind === TK.Arrow ||
+            prevTok.kind === TK.LBracket ||
+            prevTok.kind === TK.Comma ||
+            prevTok.kind === TK.Eq
+          if (isAfterOperator) {
+            advance(state) // consume ident
+            const key: DWIdentifier = { kind: 'Identifier', name: tok.value }
+            advance(state) // consume :
+            const value = parseExpression(state, 0, commentIdx)
+            const entry: DWObjectEntry = { kind: 'ObjectEntry', key, value, conditional: null, dynamic: false }
+            node = { kind: 'ObjectExpr', entries: [entry] } as DWObjectExpr
+            break
+          }
+        }
+      }
       advance(state)
       node = { kind: 'Identifier', name: tok.value } as DWIdentifier
       break
@@ -910,10 +989,14 @@ function parseObject(state: ParserState, commentIdx: { value: number }): DWObjec
       advance(state)
       continue
     }
+    const posBefore = state.pos
     const entry = parseObjectEntry(state, commentIdx)
     if (entry) {
       entries.push(entry)
       match(state, TK.Comma) // optional trailing comma
+    } else if (state.pos === posBefore) {
+      // No progress made — skip token to avoid infinite loop
+      advance(state)
     }
   }
 
@@ -1280,6 +1363,62 @@ function parseMatchCase(
   return { kind: 'MatchCase', pattern, guard, body }
 }
 
+// ─── Update Expression ───────────────────────────────────────────────────────
+
+function parseUpdateBody(
+  state: ParserState,
+  expr: DWNode,
+  commentIdx: { value: number },
+): DWMatchExpr {
+  expect(state, TK.LBrace)
+  const cases: DWMatchCase[] = []
+
+  while (!at(state, TK.RBrace) && !at(state, TK.EOF)) {
+    const updateCase = parseUpdateCase(state, commentIdx)
+    if (updateCase) cases.push(updateCase)
+    else advance(state) // skip unrecognized tokens to avoid infinite loop
+  }
+
+  expect(state, TK.RBrace)
+  return { kind: 'MatchExpr', op: 'update', expr, cases }
+}
+
+function parseUpdateCase(
+  state: ParserState,
+  commentIdx: { value: number },
+): DWMatchCase | null {
+  if (!at(state, TK.KwCase)) return null
+  const leading = collectLeadingComments(state, commentIdx, peek(state).line - 1)
+  expect(state, TK.KwCase)
+
+  // Parse update case pattern: `[binding at] .path[.path...]`
+  // Pattern tokens are collected until we hit `->`
+  const patternParts: string[] = []
+  let depth = 0
+  while (!at(state, TK.EOF)) {
+    const t = peek(state)
+    if (t.kind === TK.LParen || t.kind === TK.LBracket || t.kind === TK.LBrace) depth++
+    if (t.kind === TK.RParen || t.kind === TK.RBracket || t.kind === TK.RBrace) depth--
+    if (depth === 0 && t.kind === TK.Arrow) break
+    // Smart spacing: no space around dots
+    if (patternParts.length > 0 && t.kind !== TK.Dot && t.kind !== TK.DotDot) {
+      const prev = patternParts[patternParts.length - 1]
+      if (prev !== '.' && prev !== '..') {
+        patternParts.push(' ')
+      }
+    }
+    patternParts.push(advance(state).value)
+  }
+
+  expect(state, TK.Arrow)
+  const body = parseExpression(state, 0, commentIdx)
+  const pattern: DWIdentifier = { kind: 'Identifier', name: patternParts.join('') }
+
+  const result: DWMatchCase = { kind: 'MatchCase', pattern, guard: null, body }
+  if (leading.length > 0) result.leadingComments = leading
+  return result
+}
+
 // ─── Do Expression ────────────────────────────────────────────────────────────
 
 function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExpr {
@@ -1394,15 +1533,37 @@ function parseArgList(state: ParserState, commentIdx: { value: number }): DWNode
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+function isHeaderKeyword(kind: TK): boolean {
+  return (
+    kind === TK.KwVar ||
+    kind === TK.KwFun ||
+    kind === TK.KwType ||
+    kind === TK.KwNs ||
+    kind === TK.KwImport ||
+    kind === TK.KwInput ||
+    kind === TK.KwOutput
+  )
+}
+
 export function parse(src: string): DWDocument {
   const state = createState(src)
   const commentIdx = { value: 0 }
 
   let header: DWHeader | null = null
   let separator = false
+  let hasVersion = false
 
   if (at(state, TK.DwVersion)) {
     advance(state) // consume %dw 2.0
+    hasVersion = true
+    header = parseHeader(state, commentIdx)
+
+    if (at(state, TK.TripleDash)) {
+      advance(state)
+      separator = true
+    }
+  } else if (isHeaderKeyword(peek(state).kind)) {
+    // Header directives without %dw version (e.g. starts with "output ...")
     header = parseHeader(state, commentIdx)
 
     if (at(state, TK.TripleDash)) {
@@ -1421,5 +1582,5 @@ export function parse(src: string): DWDocument {
     body = parseExpression(state, 0, commentIdx)
   }
 
-  return { kind: 'Document', header, separator, body }
+  return { kind: 'Document', header, separator, hasVersion, body }
 }

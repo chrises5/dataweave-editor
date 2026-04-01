@@ -48,6 +48,7 @@ export interface DWDocument {
   kind: 'Document'
   header: DWHeader | null
   separator: boolean
+  hasVersion: boolean
   body: DWNode
   blankLineBefore?: boolean
   leadingComments?: string[]
@@ -82,11 +83,12 @@ export interface DWFunDirective {
   trailingComments?: string[]
 }
 
-/** Type body stored as raw string for Phase 8 — full type parsing is deferred */
+/** Type body — entries are populated for object types `{ field: Type, ... }` */
 export interface DWTypeDirective {
   kind: 'TypeDirective'
   name: string
   value: string
+  entries?: { key: string; type: string }[]
   blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
@@ -140,6 +142,7 @@ export interface DWIfExpr {
 
 export interface DWMatchExpr {
   kind: 'MatchExpr'
+  op?: 'match' | 'update'
   expr: DWNode
   cases: DWMatchCase[]
   blankLineBefore?: boolean
