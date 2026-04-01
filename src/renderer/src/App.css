@@ -130,9 +130,9 @@
 }
 
 /* Fix: Monaco find widget close button vertical alignment (D-16)
- * Monaco sets close button to top:5px but the find-actions buttons sit at
- * ~4.5px (3px margin-top on .find-part + 1.5px centering in 25px container).
- * Nudge close button up 1px to match. !important to override Monaco inline. */
+ * The find-part has margin-top:3px, .find-actions is 25px with centered 22px
+ * buttons → action icons sit at ~4.5px from top. The close button (absolute,
+ * top:5px by default) needs to match. Use 6px to align with the row visually. */
 .monaco-editor .find-widget > .button.codicon-widget-close {
-  top: 4px !important;
+  top: 6px !important;
 }

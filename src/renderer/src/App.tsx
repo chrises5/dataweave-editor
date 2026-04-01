@@ -57,27 +57,56 @@ export function App(): React.JSX.Element {
     })
   }, [])
 
-  // Fix: Monaco find widget close-button tooltip flicker (D-16)
-  // The close button (.find-widget > .button) sits outside .find-actions and
-  // Monaco's hoverService shows a tooltip that overlaps the tiny 22x22 button,
-  // causing a flicker loop. We suppress mouseover on ONLY the close button
-  // (direct child of .find-widget, not buttons inside .find-actions).
+  // Fix: Monaco find widget tooltip flicker (D-16)
+  // Monaco's hover tooltip overlaps tiny find-widget buttons, causing a
+  // mouseout→dismiss→mouseover→show flicker loop. Making the tooltip
+  // ignore pointer events breaks the cycle — the mouse stays "on" the
+  // button even when the tooltip renders over it. The .workbench-hover
+  // is purely informational (no links/buttons), so pointer-events:none
+  // is safe. Applied via JS because the element is dynamically created.
   useEffect(() => {
-    const suppress = (e: Event): void => { e.stopImmediatePropagation() }
-    const patched = new WeakSet<Element>()
+    let findButtonHovered = false
 
-    const patchCloseButtons = (): void => {
-      document.querySelectorAll('.find-widget > .button').forEach((btn) => {
-        if (!patched.has(btn)) {
-          patched.add(btn)
-          btn.addEventListener('mouseover', suppress, true)
-        }
-      })
+    const onOver = (e: Event): void => {
+      const el = e.target as HTMLElement | null
+      if (el?.closest('.find-widget .button, .find-widget .monaco-custom-toggle')) {
+        findButtonHovered = true
+      }
     }
+    const onOut = (e: Event): void => {
+      const el = e.target as HTMLElement | null
+      if (el?.closest('.find-widget .button, .find-widget .monaco-custom-toggle')) {
+        findButtonHovered = false
+      }
+    }
+    document.addEventListener('mouseover', onOver, true)
+    document.addEventListener('mouseout', onOut, true)
 
-    const observer = new MutationObserver(patchCloseButtons)
+    const observer = new MutationObserver((mutations) => {
+      if (!findButtonHovered) return
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue
+          // The hover is inside a .context-view container
+          const hover = node.querySelector?.('.workbench-hover') ??
+            (node.classList?.contains('workbench-hover') ? node : null)
+          if (hover instanceof HTMLElement) {
+            hover.style.pointerEvents = 'none'
+            // Also set on the parent context-view so it can't intercept either
+            const ctx = hover.closest('.context-view')
+            if (ctx instanceof HTMLElement) {
+              ctx.style.pointerEvents = 'none'
+            }
+          }
+        }
+      }
+    })
     observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('mouseover', onOver, true)
+      document.removeEventListener('mouseout', onOut, true)
+    }
   }, [])
 
   // Hydration
