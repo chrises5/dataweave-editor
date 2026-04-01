@@ -46,8 +46,9 @@ Plans:
 **Goal:** Add a settings dialog with persistent editor configuration (font size, tab size, insert spaces, auto-run delay), keybindings for font zoom and formatting, and fix the Ctrl+F tooltip flicker
 **Requirements:** [SET-01, SET-02, SET-03, SET-04, SET-05, SET-06, SET-07, SET-08, SET-09]
 **Depends on:** Phase 8
-**Plans:** 2 plans
+**Status:** Complete
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 09-01-PLAN.md — Settings persistence layer, IPC channels, Zustand state, and keybindings
-- [ ] 09-02-PLAN.md — Settings dialog UI, editor wiring, and tooltip bug fix
+- [x] 09-02-PLAN.md — Settings dialog UI, editor wiring, and tooltip bug fix
