@@ -66,6 +66,16 @@ export const concat = (...parts: Doc[]): Doc => ({ kind: 'concat', parts })
 export const nest = (indent: number, doc: Doc): Doc => ({ kind: 'nest', indent, doc })
 export const group = (doc: Doc): Doc => ({ kind: 'group', doc })
 
+// ─── Indent Size ───────────────────────────────────────────────────────────
+
+/** Module-level indent size used by printDoc. Set before each format call. */
+let ind = 2
+
+/** Set the indent size for subsequent printDoc calls. */
+export function setIndentSize(n: number): void {
+  ind = n
+}
+
 /** Interleave docs with a separator */
 export function join(sep: Doc, docs: Doc[]): Doc {
   if (docs.length === 0) return ''
@@ -215,6 +225,28 @@ function printParam(p: DWParam): Doc {
 
 // ─── printEntry ──────────────────────────────────────────────────────────────
 
+/**
+ * Check if a node's terminal (rightmost) expression is a self-indenting block
+ * (ObjectExpr, ArrayExpr, DoExpr, IfExpr). Walks through BinaryExpr right
+ * branches and Lambda bodies so that `x map (item) -> do { ... }` is correctly
+ * detected. IfExpr is included because printIfChain already nests branch bodies.
+ */
+function isBlockTerminated(node: DWNode): boolean {
+  switch (node.kind) {
+    case 'ObjectExpr':
+    case 'ArrayExpr':
+    case 'DoExpr':
+    case 'IfExpr':
+      return true
+    case 'BinaryExpr':
+      return isBlockTerminated((node as DWBinaryExpr).right)
+    case 'Lambda':
+      return isBlockTerminated((node as DWLambda).body)
+    default:
+      return false
+  }
+}
+
 function printEntry(entry: DWObjectEntry): Doc {
   // Spread entry: (if(...) key: val else null) — print just the expression in parens
   if (entry.spread) {
@@ -229,7 +261,12 @@ function printEntry(entry: DWObjectEntry): Doc {
     ? concat(text('('), printDoc(entry.key), text(')'))
     : printDoc(entry.key)
 
-  let entryDoc: Doc = concat(keyDoc, text(': '), printDoc(entry.value))
+  const valueDoc = printDoc(entry.value)
+  // Nest the value for continuation indent on multi-line expressions (like if/else),
+  // but NOT for block-terminated expressions (objects, arrays, do blocks) which
+  // manage their own indentation — even through binary/lambda chains like `x map (y) -> do { ... }`.
+  const needsNest = !isBlockTerminated(entry.value)
+  let entryDoc: Doc = concat(keyDoc, text(': '), needsNest ? nest(ind, valueDoc) : valueDoc)
 
   if (entry.conditional !== null) {
     entryDoc = concat(text('('), entryDoc, text(') if('), printDoc(entry.conditional), text(')'))
@@ -257,6 +294,118 @@ function printCase(c: DWMatchCase): Doc {
   return wrapWithComments(c, caseDoc)
 }
 
+// ─── printIfChain ───────────────────────────────────────────────────────────
+
+/**
+ * Print an if / else-if / else chain as a single group.
+ * This ensures all branches break consistently — either the whole chain is flat
+ * or every branch gets its own line.
+ */
+/**
+ * Print a branch body for parenthesized if/else chains.
+ * When the body is EnclosedExpr and forceBreak is true, always break:
+ *   if (cond) (
+ *     body
+ *   ) else (
+ *     body
+ *   )
+ * When forceBreak is false, use softline so it can stay flat: (body)
+ * When not parenthesized, use standard indent with line (respects group).
+ */
+function printBranchBody(body: DWNode, forceBreak: boolean): { prefix: Doc; doc: Doc; suffix: Doc } {
+  if (body.kind === 'EnclosedExpr') {
+    const inner = (body as DWEnclosedExpr).expr
+    const br = forceBreak ? hardline : softline
+    return {
+      prefix: text(' ('),
+      doc: concat(nest(ind, concat(br, printDoc(inner))), br),
+      suffix: text(')'),
+    }
+  }
+  return {
+    prefix: '',
+    doc: nest(ind, concat(line, printDoc(body))),
+    suffix: '',
+  }
+}
+
+function printIfChain(node: DWIfExpr): Doc {
+  // Collect all branches: [{cond, body, leadingComments}] + optional finalElse
+  interface Branch {
+    cond: DWNode
+    body: DWNode
+    leadingComments: string[]
+  }
+  const branches: Branch[] = []
+  let finalElse: DWNode | null = null
+
+  let current: DWIfExpr | null = node
+  let isFirst = true
+  while (current !== null) {
+    branches.push({
+      cond: current.cond,
+      body: current.then,
+      leadingComments: isFirst ? [] : (current.leadingComments ?? []),
+    })
+    isFirst = false
+    if (current.else_ === null) {
+      break
+    }
+    if (current.else_.kind === 'IfExpr') {
+      current = current.else_ as DWIfExpr
+    } else {
+      finalElse = current.else_
+      break
+    }
+  }
+
+  // Check if ALL branches (including finalElse) use parenthesized bodies.
+  // If so, use the paren-inlined layout with forced breaks — this is the
+  // idiomatic DataWeave style: if(cond) (\n  value\n) else (\n  value\n)
+  const allBodies = [...branches.map(b => b.body), ...(finalElse ? [finalElse] : [])]
+  const allParenBranches = allBodies.every(b => b.kind === 'EnclosedExpr')
+  const anyParenBranch = allBodies.some(b => b.kind === 'EnclosedExpr')
+
+  // Build the doc as a single group
+  const parts: Doc[] = []
+  for (let i = 0; i < branches.length; i++) {
+    const b = branches[i]
+    const bb = anyParenBranch ? printBranchBody(b.body, allParenBranches) : null
+    if (i === 0) {
+      parts.push(text('if ('), printDoc(b.cond), text(')'))
+      if (bb) {
+        parts.push(bb.prefix, bb.doc, bb.suffix)
+      } else {
+        parts.push(nest(ind, concat(line, printDoc(b.body))))
+      }
+    } else {
+      // Leading comments go above the else-if line
+      if (b.leadingComments.length > 0) {
+        for (const c of b.leadingComments) {
+          parts.push(hardline, text(c))
+        }
+      }
+      if (bb) {
+        parts.push(line, text('else if ('), printDoc(b.cond), text(')'), bb.prefix, bb.doc, bb.suffix)
+      } else {
+        parts.push(line, text('else if ('), printDoc(b.cond), text(')'))
+        parts.push(nest(ind, concat(line, printDoc(b.body))))
+      }
+    }
+  }
+
+  if (finalElse !== null) {
+    if (anyParenBranch) {
+      const eb = printBranchBody(finalElse, allParenBranches)
+      parts.push(line, text('else'), eb.prefix, eb.doc, eb.suffix)
+    } else {
+      parts.push(line, text('else'), nest(ind, concat(line, printDoc(finalElse))))
+    }
+  }
+
+  return group(concat(...parts))
+}
+
 // ─── printDoc ────────────────────────────────────────────────────────────────
 
 /**
@@ -273,6 +422,7 @@ export function printDoc(node: DWNode): Doc {
 
       if (n.header !== null) {
         // Header present means source started with %dw 2.0
+        // Wrap body in group so top-level simple objects can stay flat
         inner = concat(
           text('%dw 2.0'),
           hardline,
@@ -280,14 +430,14 @@ export function printDoc(node: DWNode): Doc {
           hardline,
           text('---'),
           hardline,
-          printDoc(n.body)
+          group(printDoc(n.body))
         )
       } else if (n.separator) {
         // No header, but source had a --- separator (body-only form with separator)
         inner = concat(
           text('---'),
           hardline,
-          printDoc(n.body)
+          group(printDoc(n.body))
         )
       } else {
         // Pure expression, no header or separator
@@ -300,19 +450,32 @@ export function printDoc(node: DWNode): Doc {
     case 'Header': {
       const n = node as DWHeader
       if (n.directives.length === 0) return ''
-      const directiveDocs = n.directives.map(printDoc)
-      const inner = join(hardline, directiveDocs)
+      const parts: Doc[] = []
+      for (let i = 0; i < n.directives.length; i++) {
+        if (i > 0) {
+          parts.push(hardline)
+          if (n.directives[i].blankLineBefore) {
+            parts.push(hardline)
+          }
+        }
+        parts.push(printDoc(n.directives[i]))
+      }
+      const inner = concat(...parts)
       return wrapWithComments(n, inner)
     }
 
     // ── VarDirective ────────────────────────────────────────────────────────
     case 'VarDirective': {
       const n = node as DWVarDirective
+      const valueDoc = printDoc(n.value)
       let inner: Doc
       if (n.typeAnnotation) {
-        inner = concat(text('var '), text(n.name), text(': '), text(n.typeAnnotation), text(' = '), printDoc(n.value))
+        inner = concat(
+          text('var '), text(n.name), text(': '), text(n.typeAnnotation), text(' = '),
+          valueDoc
+        )
       } else {
-        inner = concat(text('var '), text(n.name), text(' = '), printDoc(n.value))
+        inner = concat(text('var '), text(n.name), text(' = '), valueDoc)
       }
       return wrapWithComments(n, inner)
     }
@@ -327,7 +490,8 @@ export function printDoc(node: DWNode): Doc {
         text('('),
         join(text(', '), paramDocs),
         text(') = '),
-        printDoc(n.body)
+        (n.body.kind === 'DoExpr' || n.body.kind === 'ObjectExpr' || n.body.kind === 'ArrayExpr')
+          ? printDoc(n.body) : nest(ind, printDoc(n.body))
       )
       return wrapWithComments(n, inner)
     }
@@ -375,41 +539,7 @@ export function printDoc(node: DWNode): Doc {
     // ── IfExpr ──────────────────────────────────────────────────────────────
     case 'IfExpr': {
       const n = node as DWIfExpr
-      let inner: Doc
-      if (n.else_ !== null) {
-        // else if → keep on same line, with comments between else and if
-        let elsePart: Doc
-        if ((n.else_ as DWIfExpr).kind === 'IfExpr') {
-          const elseIf = n.else_ as DWIfExpr
-          const comments = elseIf.leadingComments ?? []
-          // Print without leading comments (we handle them ourselves)
-          const stripped = { ...elseIf, leadingComments: undefined }
-          if (comments.length > 0) {
-            // Put comments above the else-if line, keeping else if together
-            const commentLines = comments.map(c => concat(hardline, text(c)))
-            elsePart = concat(...commentLines, hardline, text('else '), printDoc(stripped as DWIfExpr))
-          } else {
-            elsePart = concat(text('else '), printDoc(stripped as DWIfExpr))
-          }
-        } else {
-          elsePart = concat(text('else'), nest(2, concat(line, printDoc(n.else_))))
-        }
-        inner = group(concat(
-          text('if ('),
-          printDoc(n.cond),
-          text(')'),
-          nest(2, concat(line, printDoc(n.then))),
-          line,
-          elsePart
-        ))
-      } else {
-        inner = group(concat(
-          text('if ('),
-          printDoc(n.cond),
-          text(')'),
-          nest(2, concat(line, printDoc(n.then)))
-        ))
-      }
+      const inner = printIfChain(n)
       return wrapWithComments(n, inner)
     }
 
@@ -420,7 +550,7 @@ export function printDoc(node: DWNode): Doc {
       const inner = group(concat(
         printDoc(n.expr),
         text(' match {'),
-        nest(2, concat(hardline, join(hardline, caseDocs))),
+        nest(ind, concat(hardline, join(hardline, caseDocs))),
         hardline,
         text('}')
       ))
@@ -438,7 +568,7 @@ export function printDoc(node: DWNode): Doc {
       bodyParts.push(hardline, printDoc(n.body))
       const inner = concat(
         text('do {'),
-        nest(2, concat(...bodyParts)),
+        nest(ind, concat(...bodyParts)),
         hardline,
         text('}')
       )
@@ -476,11 +606,33 @@ export function printDoc(node: DWNode): Doc {
     // ── BinaryExpr ──────────────────────────────────────────────────────────
     case 'BinaryExpr': {
       const n = node as DWBinaryExpr
-      // When the group breaks, indent the continuation and keep op on left line
+      // Only these operators allow line breaks between left and right:
+      const breakableOps = new Set([
+        '++', '--', '+', '-', '*', '/',
+        'or', 'and',
+        '==', '!=', '~=', '<', '<=', '>', '>=',
+      ])
+      if (!breakableOps.has(n.op)) {
+        const inner = concat(
+          printDoc(n.left),
+          text(' ' + n.op + ' '),
+          printDoc(n.right)
+        )
+        return wrapWithComments(n, inner)
+      }
+      // Break at the operator: operator stays at end of left line,
+      // right operand goes on next line indented.
+      // flat:  left ++ right
+      // break: left ++\n  right
+      // Skip nest for block-like right operands that manage their own indentation.
+      const rightDoc = printDoc(n.right)
+      const rightSelfIndenting = n.right.kind === 'DoExpr' || n.right.kind === 'ObjectExpr' || n.right.kind === 'ArrayExpr'
       const inner = group(concat(
         printDoc(n.left),
-        text(' ' + n.op + ' '),
-        printDoc(n.right)
+        text(' ' + n.op),
+        rightSelfIndenting
+          ? concat(text(' '), rightDoc)
+          : nest(ind, concat(line, rightDoc))
       ))
       return wrapWithComments(n, inner)
     }
@@ -529,12 +681,12 @@ export function printDoc(node: DWNode): Doc {
     case 'FunctionCall': {
       const n = node as DWFunctionCall
       const argDocs = n.args.map(printDoc)
-      // Use softline so args don't get a leading space in flat mode
+      // Never break function args — wrap in group to force flat mode for
+      // nested objects/arrays so they stay on one line inside args.
       const inner = group(concat(
         printDoc(n.callee),
         text('('),
-        nest(2, concat(softline, join(concat(text(','), line), argDocs))),
-        softline,
+        join(text(', '), argDocs),
         text(')')
       ))
       return wrapWithComments(n, inner)
@@ -548,13 +700,16 @@ export function printDoc(node: DWNode): Doc {
         inner = text('{}')
       } else {
         const entryDocs = n.entries.map(printEntry)
-        // Use softline so {a: 1} stays tight in flat mode (no leading space)
-        inner = group(concat(
+        // Objects use line (space in flat, newline in break) without their own
+        // group — they inherit the parent's break mode. This ensures nested
+        // objects inside a breaking parent also expand consistently.
+        // Objects only stay flat when inside a flat context (e.g. function args).
+        inner = concat(
           text('{'),
-          nest(2, concat(softline, join(concat(text(','), line), entryDocs))),
-          softline,
+          nest(ind, concat(line, join(concat(text(','), line), entryDocs))),
+          line,
           text('}')
-        ))
+        )
       }
       return wrapWithComments(n, inner)
     }
@@ -570,7 +725,7 @@ export function printDoc(node: DWNode): Doc {
         // Use softline so [1, 2, 3] stays tight in flat mode
         inner = group(concat(
           text('['),
-          nest(2, concat(softline, join(concat(text(','), line), elemDocs))),
+          nest(ind, concat(softline, join(concat(text(','), line), elemDocs))),
           softline,
           text(']')
         ))

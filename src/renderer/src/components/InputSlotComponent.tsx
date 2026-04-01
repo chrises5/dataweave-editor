@@ -1,11 +1,67 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { Editor } from '@monaco-editor/react'
+import type { Monaco } from '@monaco-editor/react'
+import type { editor } from 'monaco-editor'
 import { useEditorStore } from '../store'
 import type { InputSlot } from '../types'
 import { Button } from './ui/button'
 
 interface Props {
   slot: InputSlot
+}
+
+function formatJson(text: string): string | null {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return null
+  }
+}
+
+function formatXml(text: string): string | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('<')) return null
+  let indent = 0
+  const lines: string[] = []
+  // Split on tag boundaries
+  const tokens = trimmed.replace(/>\s*</g, '>\n<').split('\n')
+  for (const raw of tokens) {
+    const token = raw.trim()
+    if (!token) continue
+    // Closing tag
+    if (token.startsWith('</')) {
+      indent = Math.max(0, indent - 1)
+      lines.push('  '.repeat(indent) + token)
+    }
+    // Self-closing or processing instruction
+    else if (token.endsWith('/>') || token.startsWith('<?')) {
+      lines.push('  '.repeat(indent) + token)
+    }
+    // Opening tag
+    else if (token.startsWith('<') && !token.startsWith('<!')) {
+      lines.push('  '.repeat(indent) + token)
+      // Only increase indent if tag doesn't contain its closing tag on same line
+      if (!/<\/[^>]+>\s*$/.test(token)) {
+        indent++
+      }
+    }
+    // Content or other
+    else {
+      lines.push('  '.repeat(indent) + token)
+    }
+  }
+  return lines.join('\n')
+}
+
+function formatContent(mimeType: string, text: string): string | null {
+  switch (mimeType) {
+    case 'application/json':
+      return formatJson(text)
+    case 'application/xml':
+      return formatXml(text)
+    default:
+      return null
+  }
 }
 
 // Map MIME types to Monaco language IDs for syntax support
@@ -23,6 +79,46 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
   const updateInput = useEditorStore((s) => s.updateInput)
   const theme = useEditorStore((s) => s.theme)
   const [dragging, setDragging] = useState(false)
+  const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+
+  const mimeRef = useRef(slot.mimeType)
+  mimeRef.current = slot.mimeType
+
+  const handleEditorMount = useCallback((ed: editor.IStandaloneCodeEditor, monacoInstance: Monaco) => {
+    editorRef.current = ed
+
+    const runFormat = (): void => {
+      const model = ed.getModel()
+      if (!model) return
+      const formatted = formatContent(mimeRef.current, model.getValue())
+      if (formatted === null) return
+      model.setValue(formatted)
+    }
+
+    // Shift+Alt+F via action (also appears in command palette)
+    // eslint-disable-next-line no-bitwise
+    ed.addAction({
+      id: 'format-content',
+      label: 'Format Document',
+      keybindings: [
+        monacoInstance.KeyMod.Shift | monacoInstance.KeyMod.Alt | monacoInstance.KeyCode.KeyF,
+      ],
+      run: runFormat,
+    })
+  }, [])
+
+  // Listen for Cmd+Shift+F from Electron main process (only act if this editor has focus)
+  useEffect(() => {
+    return window.api.onFormat(() => {
+      const ed = editorRef.current
+      if (!ed || !ed.hasWidgetFocus()) return
+      const model = ed.getModel()
+      if (!model) return
+      const formatted = formatContent(mimeRef.current, model.getValue())
+      if (formatted === null) return
+      model.setValue(formatted)
+    })
+  }, [])
 
   const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
@@ -83,6 +179,7 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
           language={editorLanguage}
           theme={theme === 'dark' ? 'vs-dark' : 'vs'}
           value={slot.content}
+          onMount={handleEditorMount}
           onChange={(val) => updateInput(slot.id, { content: val ?? '', filePath: undefined, fileName: undefined })}
           options={{
             minimap: { enabled: false },

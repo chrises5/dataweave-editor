@@ -253,7 +253,14 @@ export function lex(src: string): Token[] {
       // Decide if this is a regex literal based on context.
       // Regex follows: start of expression, operator, comma, open bracket/paren/brace,
       // or assignment. NOT after identifier, number, ), ], or }.
+      // After an identifier, `/` is regex if immediately followed by a regex-start
+      // character (e.g. `matches /[pattern]/`). NOT regex if followed by a letter
+      // (e.g. `application/json`) or space (e.g. `a / b` division).
+      const nextCh = i + 1 < src.length ? src[i + 1] : ''
+      const isRegexStart = nextCh !== '' && !/[a-zA-Z0-9_ \t\n]/.test(nextCh)
+      const isRegexAfterIdent = lastNonWsKind === TK.Ident && isRegexStart
       const isRegexContext =
+        isRegexAfterIdent ||
         lastNonWsKind === null ||
         lastNonWsKind === TK.Eq ||
         lastNonWsKind === TK.EqEq ||
@@ -499,7 +506,23 @@ export function lex(src: string): Token[] {
       case '.': push(TK.Dot, '.', startLine, startCol); advance(); lastNonWsKind = TK.Dot; break
       case '=': push(TK.Eq, '=', startLine, startCol); advance(); lastNonWsKind = TK.Eq; break
       case ';': push(TK.Semicolon, ';', startLine, startCol); advance(); lastNonWsKind = TK.Semicolon; break
-      case '|': push(TK.Pipe, '|', startLine, startCol); advance(); lastNonWsKind = TK.Pipe; break
+      case '|': {
+        // Check for date/time literal: |2024-10-03|, |12:00:00Z|, etc.
+        // Date/time literals start with | followed by a digit
+        if (isDigit(peek(1))) {
+          let j = i + 1
+          while (j < src.length && src[j] !== '|' && src[j] !== '\n') j++
+          if (j < src.length && src[j] === '|') {
+            j++ // consume closing |
+            const val = src.slice(i, j)
+            advance(val.length)
+            push(TK.StringLit, val, startLine, startCol) // store as StringLit with |...| value
+            lastNonWsKind = TK.StringLit
+            break
+          }
+        }
+        push(TK.Pipe, '|', startLine, startCol); advance(); lastNonWsKind = TK.Pipe; break
+      }
       case '+': push(TK.Plus, '+', startLine, startCol); advance(); lastNonWsKind = TK.Plus; break
       case '-': push(TK.Minus, '-', startLine, startCol); advance(); lastNonWsKind = TK.Minus; break
       case '*': push(TK.Star, '*', startLine, startCol); advance(); lastNonWsKind = TK.Star; break

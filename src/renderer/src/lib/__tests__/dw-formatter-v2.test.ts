@@ -29,8 +29,8 @@ describe('basic formatting', () => {
   it('formats a simple object without extra spaces', () => {
     const src = '%dw 2.0\n---\n{a: 1}'
     const result = formatDataWeave(src)
-    // Short object should stay on a single line, no leading/trailing spaces inside braces
-    expect(result).toContain('{a: 1}')
+    // Short object should stay on a single line with spaces inside braces
+    expect(result).toContain('{ a: 1 }')
   })
 
   it('ends with a trailing newline', () => {
@@ -137,11 +137,11 @@ describe('comment preservation', () => {
 // ─── 6. Line-width grouping ───────────────────────────────────────────────────
 
 describe('line-width grouping', () => {
-  it('keeps a short object on one line (no spaces inside braces)', () => {
+  it('keeps a short object on one line', () => {
     const src = '%dw 2.0\n---\n{a: 1, b: 2}'
     const result = formatDataWeave(src)
-    // Short object should fit on one line: {a: 1, b: 2}
-    expect(result).toContain('{a: 1, b: 2}')
+    // Short object should fit on one line with spaces: { a: 1, b: 2 }
+    expect(result).toContain('{ a: 1, b: 2 }')
   })
 
   it('breaks a long object across multiple lines', () => {

@@ -138,6 +138,8 @@ function createWindow(): void {
       mainWindow.webContents.send('tab:next')
     } else if (mod && input.shift && input.key === '[') {
       mainWindow.webContents.send('tab:prev')
+    } else if (mod && input.shift && (input.key === 'f' || input.key === 'F')) {
+      mainWindow.webContents.send('shortcut:format')
     } else if (mod && input.shift && input.key === 'D') {
       mainWindow.webContents.send('theme:toggle')
     } else if (mod && !input.shift && input.key >= '1' && input.key <= '9') {

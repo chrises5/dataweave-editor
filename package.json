@@ -1,6 +1,6 @@
 {
   "name": "dataweave-editor",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Local DataWeave editor — run DataWeave transformations on your machine",
   "main": "./out/main/index.js",
   "author": "",

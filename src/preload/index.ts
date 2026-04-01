@@ -51,4 +51,9 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('theme:toggle', listener)
     return (): void => { ipcRenderer.removeListener('theme:toggle', listener) }
   },
+  onFormat: (cb: () => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('shortcut:format', listener)
+    return (): void => { ipcRenderer.removeListener('shortcut:format', listener) }
+  },
 })

@@ -56,6 +56,10 @@ export class ParseError extends Error {
 
 // ─── Binary Operator Precedence Table ────────────────────────────────────────
 
+// Default precedence for any identifier used as an infix function.
+// In DataWeave, any two-parameter function can be used infix: `a myFunc b`.
+const INFIX_FUNC_PREC = 48
+
 const BINARY_PREC: Record<string, number> = {
   default: 5,
   or: 10,
@@ -68,21 +72,6 @@ const BINARY_PREC: Record<string, number> = {
   '>': 40,
   '>=': 40,
   is: 45,
-  // DataWeave infix functions — same precedence as ++ (concatenation level)
-  map: 48,
-  flatMap: 48,
-  filter: 48,
-  filterObject: 48,
-  reduce: 48,
-  pluck: 48,
-  groupBy: 48,
-  orderBy: 48,
-  distinctBy: 48,
-  maxBy: 48,
-  minBy: 48,
-  joinBy: 48,
-  contains: 48,
-  orElse: 48,
   '++': 50,
   '--': 50,
   '+': 60,
@@ -216,18 +205,24 @@ function isKeywordUsedAsIdent(kind: TK): boolean {
 
 function parseHeader(state: ParserState, commentIdx: { value: number }): DWHeader {
   const directives: DWNode[] = []
+  let prevEndLine = -1
 
   while (!at(state, TK.TripleDash) && !at(state, TK.EOF)) {
     const tok = peek(state)
+    const startLine = tok.line
     // Leading comments before directive
     const leading = collectLeadingComments(state, commentIdx, tok.line - 1)
     const directive = parseDirective(state, commentIdx)
     if (directive) {
-      if (leading.length > 0) {
-        directives.push({ ...directive, leadingComments: leading })
+      // Detect blank line: if this directive starts 2+ lines after the previous ended
+      const blankLineBefore = prevEndLine >= 0 && startLine - prevEndLine > 1
+      if (leading.length > 0 || blankLineBefore) {
+        directives.push({ ...directive, ...(leading.length > 0 ? { leadingComments: leading } : {}), ...(blankLineBefore ? { blankLineBefore: true } : {}) })
       } else {
         directives.push(directive)
       }
+      // Track end line: use current token position as approximation
+      prevEndLine = state.tokens[state.pos - 1]?.line ?? startLine
     }
   }
 
@@ -342,6 +337,11 @@ function parseFunDirective(
   const params = parseFunParams(state)
   expect(state, TK.RParen)
 
+  // Optional return type annotation: ): ReturnType =
+  if (match(state, TK.Colon)) {
+    consumeTypeAnnotation(state)
+  }
+
   expect(state, TK.Eq)
   const body = parseExpression(state, 0, commentIdx)
 
@@ -361,7 +361,26 @@ function parseFunParams(state: ParserState): DWParam[] {
       typeAnnotation = consumeTypeAnnotation(state)
     }
 
-    params.push({ kind: 'Param', name: paramName, typeAnnotation })
+    // Optional default value: param = expr
+    let defaultValue: string | null = null
+    if (match(state, TK.Eq)) {
+      // Consume default value tokens until , or ) at depth 0
+      const dvParts: string[] = []
+      let dvDepth = 0
+      while (!at(state, TK.EOF)) {
+        const t = peek(state)
+        if (t.kind === TK.LParen || t.kind === TK.LBracket || t.kind === TK.LBrace) { dvDepth++; dvParts.push(advance(state).value); continue }
+        if (t.kind === TK.RParen || t.kind === TK.RBracket || t.kind === TK.RBrace) {
+          if (dvDepth > 0) { dvDepth--; dvParts.push(advance(state).value); continue }
+          break
+        }
+        if (dvDepth === 0 && t.kind === TK.Comma) break
+        dvParts.push(advance(state).value)
+      }
+      defaultValue = dvParts.join('')
+    }
+
+    params.push({ kind: 'Param', name: paramName, typeAnnotation, defaultValue })
     if (!match(state, TK.Comma)) break
   }
   return params
@@ -460,7 +479,7 @@ function consumeTypeAnnotation(state: ParserState): string {
       parts.push(advance(state).value)
       continue
     }
-    if (t.kind === TK.Gt || t.kind === TK.RBracket) {
+    if (t.kind === TK.Gt || t.kind === TK.RBracket || t.kind === TK.RParen) {
       if (depth > 0) {
         depth--
         parts.push(advance(state).value)
@@ -472,8 +491,6 @@ function consumeTypeAnnotation(state: ParserState): string {
       if (
         t.kind === TK.Eq ||
         t.kind === TK.Comma ||
-        t.kind === TK.RParen ||
-        t.kind === TK.Arrow ||
         t.kind === TK.RBrace
       )
         break
@@ -492,7 +509,12 @@ function getPrec(tok: Token): number {
   if (tok.kind === TK.KwAnd) return BINARY_PREC['and'] ?? -1
   if (tok.kind === TK.KwOr) return BINARY_PREC['or'] ?? -1
   if (tok.kind === TK.KwDefault) return BINARY_PREC['default'] ?? -1
-  return BINARY_PREC[tok.value] ?? -1
+  if (tok.kind === TK.KwUpdate) return INFIX_FUNC_PREC
+  const explicit = BINARY_PREC[tok.value]
+  if (explicit !== undefined) return explicit
+  // Any identifier in infix position is a user-defined or built-in infix function
+  if (tok.kind === TK.Ident) return INFIX_FUNC_PREC
+  return -1
 }
 
 function getOpValue(tok: Token): string {
@@ -510,6 +532,14 @@ function parseExpression(
   commentIdx: { value: number },
 ): DWNode {
   let left = parsePrimary(state, commentIdx)
+
+  // (expr): value — dynamic-key single-entry object (implicit object without braces)
+  if (left.kind === 'EnclosedExpr' && at(state, TK.Colon)) {
+    advance(state) // consume :
+    const value = parseExpression(state, 0, commentIdx)
+    const entry: DWObjectEntry = { kind: 'ObjectEntry', key: (left as DWEnclosedExpr).expr, value, conditional: null, dynamic: true }
+    left = { kind: 'ObjectExpr', entries: [entry] } as DWObjectExpr
+  }
 
   while (true) {
     const op = peek(state)
@@ -542,8 +572,32 @@ function parseExpression(
     if (prec <= minPrec) break
 
     advance(state)
-    const right = parseExpression(state, prec, commentIdx) // left-associative
-    left = { kind: 'BinaryExpr', op: getOpValue(op), left, right } as DWBinaryExpr
+    const opVal = getOpValue(op)
+    let right = parseExpression(state, prec, commentIdx) // left-associative
+
+    // `as Type {format: "0"}` — consume optional format object after `as`
+    if (opVal === 'as' && at(state, TK.LBrace)) {
+      // Consume {key: value, ...} as raw text appended to the type name
+      const fmtParts: string[] = []
+      let fmtDepth = 0
+      fmtParts.push(advance(state).value) // consume {
+      fmtDepth++
+      while (!at(state, TK.EOF) && fmtDepth > 0) {
+        const t = peek(state)
+        if (t.kind === TK.LBrace) fmtDepth++
+        else if (t.kind === TK.RBrace) fmtDepth--
+        fmtParts.push(advance(state).value)
+        // Add space after : and ,
+        if ((t.kind === TK.Colon || t.kind === TK.Comma) && fmtDepth > 0) fmtParts.push(' ')
+      }
+      const fmtStr = ' ' + fmtParts.join('')
+      // Append format to the right-side identifier/type
+      if (right.kind === 'Identifier') {
+        right = { ...right, name: (right as DWIdentifier).name + fmtStr } as DWIdentifier
+      }
+    }
+
+    left = { kind: 'BinaryExpr', op: opVal, left, right } as DWBinaryExpr
   }
 
   // Postfix `if (condition)` — ConditionalExpr: `value if (cond)`
@@ -696,9 +750,21 @@ function parsePostfix(state: ParserState, node: DWNode, commentIdx: { value: num
 
     if (tok.kind === TK.Dot) {
       advance(state)
-      // .* wildcard
+      // .*ident — multi-value selector (get all values with key 'ident')
       if (at(state, TK.Star)) {
         advance(state)
+        const sel = peek(state)
+        if (sel.kind === TK.Ident || isKeywordUsedAsIdent(sel.kind)) {
+          advance(state)
+          node = {
+            kind: 'SelectorExpr',
+            expr: node,
+            selector: '*' + sel.value,
+            selectorKind: 'dot',
+          } as DWSelectorExpr
+          continue
+        }
+        // .* without ident — wildcard
         node = {
           kind: 'SelectorExpr',
           expr: node,
@@ -735,6 +801,29 @@ function parsePostfix(state: ParserState, node: DWNode, commentIdx: { value: num
     if (tok.kind === TK.DotDot) {
       advance(state)
       const sel = peek(state)
+      if (sel.kind === TK.Star) {
+        // ..*ident — descendant wildcard selector
+        advance(state)
+        const ident = peek(state)
+        if (ident.kind === TK.Ident || isKeywordUsedAsIdent(ident.kind)) {
+          advance(state)
+          node = {
+            kind: 'SelectorExpr',
+            expr: node,
+            selector: '*' + ident.value,
+            selectorKind: 'dotdot',
+          } as DWSelectorExpr
+          continue
+        }
+        // ..* without ident
+        node = {
+          kind: 'SelectorExpr',
+          expr: node,
+          selector: '*',
+          selectorKind: 'dotdot',
+        } as DWSelectorExpr
+        continue
+      }
       if (sel.kind === TK.Ident || isKeywordUsedAsIdent(sel.kind)) {
         advance(state)
         node = {
@@ -836,6 +925,9 @@ function parseObjectEntry(
   state: ParserState,
   commentIdx: { value: number },
 ): DWObjectEntry | null {
+  // Collect leading comments that appear before this entry
+  const entryLeading = collectLeadingComments(state, commentIdx, peek(state).line)
+
   let dynamic = false
   let key: DWNode
 
@@ -865,6 +957,9 @@ function parseObjectEntry(
       }
       if (innerEntry) {
         innerEntry.conditional = conditional
+        if (entryLeading.length > 0) {
+          innerEntry.leadingComments = [...entryLeading, ...(innerEntry.leadingComments ?? [])]
+        }
       }
       return innerEntry
     }
@@ -878,6 +973,7 @@ function parseObjectEntry(
     if (at(state, TK.KwIf)) {
       // Conditional spread: (if(cond) key: val else null)
       // Parse as raw tokens until matching ) — only track parens
+      // Join tokens without adding spaces around dots, before/after parens, around brackets
       const startPos = state.pos
       let parenDepth = 1
       while (!at(state, TK.EOF) && parenDepth > 0) {
@@ -889,10 +985,20 @@ function parseObjectEntry(
         advance(state)
       }
       const rawTokens = state.tokens.slice(startPos, state.pos)
-      const rawStr = rawTokens.map(t => t.value).join(' ')
+      // Smart join: no space around . , before (, after (, before ), before [, after ], before ,
+      const noSpaceBefore = new Set([TK.Dot, TK.DotDot, TK.LParen, TK.RParen, TK.LBracket, TK.RBracket, TK.Comma, TK.Colon])
+      const noSpaceAfter = new Set([TK.Dot, TK.DotDot, TK.LParen, TK.LBracket, TK.Bang])
+      let rawStr = ''
+      for (let ti = 0; ti < rawTokens.length; ti++) {
+        const tok = rawTokens[ti]
+        if (ti > 0 && !noSpaceBefore.has(tok.kind) && !noSpaceAfter.has(rawTokens[ti - 1].kind)) {
+          rawStr += ' '
+        }
+        rawStr += tok.value
+      }
       expect(state, TK.RParen) // consume )
       const spreadExpr: DWIdentifier = { kind: 'Identifier', name: rawStr }
-      return { kind: 'ObjectEntry', key: spreadExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional: null, dynamic: false, spread: true } as DWObjectEntry
+      return { kind: 'ObjectEntry', key: spreadExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional: null, dynamic: false, spread: true, ...(entryLeading.length > 0 ? { leadingComments: entryLeading } : {}) } as DWObjectEntry
     }
 
     const innerExpr = parseExpression(state, 0, commentIdx)
@@ -914,7 +1020,7 @@ function parseObjectEntry(
           conditional = parseExpression(state, 0, commentIdx)
         }
       }
-      return { kind: 'ObjectEntry', key: innerExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional, dynamic: false, spread: true } as DWObjectEntry
+      return { kind: 'ObjectEntry', key: innerExpr, value: { kind: 'Literal', value: 'null', literalType: 'null' } as DWLiteral, conditional, dynamic: false, spread: true, ...(entryLeading.length > 0 ? { leadingComments: entryLeading } : {}) } as DWObjectEntry
     }
   } else if (at(state, TK.StringLit)) {
     key = { kind: 'Literal', value: advance(state).value, literalType: 'string' } as DWLiteral
@@ -951,7 +1057,11 @@ function parseObjectEntry(
     }
   }
 
-  return { kind: 'ObjectEntry', key, value, conditional, dynamic }
+  const entry: DWObjectEntry = { kind: 'ObjectEntry', key, value, conditional, dynamic }
+  if (entryLeading.length > 0) {
+    entry.leadingComments = entryLeading
+  }
+  return entry
 }
 
 // ─── Array Parsing ────────────────────────────────────────────────────────────
@@ -1133,6 +1243,15 @@ function parseMatchCase(
   if (!at(state, TK.KwCase)) return null
   expect(state, TK.KwCase)
 
+  // `case else ->` — default/else pattern after case keyword
+  if (at(state, TK.KwElse)) {
+    advance(state)
+    expect(state, TK.Arrow)
+    const body = parseExpression(state, 0, commentIdx)
+    const pattern: DWIdentifier = { kind: 'Identifier', name: 'else' }
+    return { kind: 'MatchCase', pattern, guard: null, body }
+  }
+
   let pattern: DWNode
   // `case is TypeName` — type-check pattern
   if (at(state, TK.KwIs)) {
@@ -1170,6 +1289,7 @@ function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExp
   if (at(state, TK.LBrace)) {
     advance(state)
 
+    let prevEndLine = -1
     while (!at(state, TK.RBrace) && !at(state, TK.EOF)) {
       if (
         at(state, TK.KwVar) ||
@@ -1178,8 +1298,19 @@ function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExp
         at(state, TK.KwNs) ||
         at(state, TK.KwImport)
       ) {
+        const tok = peek(state)
+        const startLine = tok.line
+        const leading = collectLeadingComments(state, commentIdx, tok.line - 1)
         const d = parseDirective(state, commentIdx)
-        if (d) directives.push(d)
+        if (d) {
+          const blankLineBefore = prevEndLine >= 0 && startLine - prevEndLine > 1
+          if (leading.length > 0 || blankLineBefore) {
+            directives.push({ ...d, ...(leading.length > 0 ? { leadingComments: leading } : {}), ...(blankLineBefore ? { blankLineBefore: true } : {}) })
+          } else {
+            directives.push(d)
+          }
+          prevEndLine = state.tokens[state.pos - 1]?.line ?? startLine
+        }
         match(state, TK.Semicolon)
       } else {
         break
@@ -1189,7 +1320,7 @@ function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExp
     const header: DWHeader = { kind: 'Header', directives }
     // Consume optional --- separator inside do block
     if (at(state, TK.TripleDash)) advance(state)
-    const body = parseExpression(state, 0, commentIdx)
+    const body = parseImplicitObjectOrExpression(state, commentIdx)
     expect(state, TK.RBrace)
     return { kind: 'DoExpr', header, body }
   }
@@ -1197,6 +1328,35 @@ function parseDoExpr(state: ParserState, commentIdx: { value: number }): DWDoExp
   const header: DWHeader = { kind: 'Header', directives: [] }
   const body = parseExpression(state, 0, commentIdx)
   return { kind: 'DoExpr', header, body }
+}
+
+/**
+ * Parse an expression that may be an implicit single-entry object (key: value without braces).
+ * Used for do-block bodies and document bodies where `"row": {...}` or `key: value` is valid.
+ */
+function parseImplicitObjectOrExpression(state: ParserState, commentIdx: { value: number }): DWNode {
+  // "string": value — implicit object with string key
+  if (at(state, TK.StringLit) && state.pos + 1 < state.tokens.length && state.tokens[state.pos + 1].kind === TK.Colon) {
+    const keyTok = advance(state)
+    const key: DWLiteral = { kind: 'Literal', value: keyTok.value, literalType: 'string' }
+    expect(state, TK.Colon)
+    const value = parseExpression(state, 0, commentIdx)
+    const entry: DWObjectEntry = { kind: 'ObjectEntry', key, value, conditional: null, dynamic: false }
+    return { kind: 'ObjectExpr', entries: [entry] } as DWObjectExpr
+  }
+  // ident: value — implicit object with ident key (but NOT ident:: namespace)
+  if ((at(state, TK.Ident) || isKeywordUsedAsIdent(peek(state).kind)) &&
+      state.pos + 1 < state.tokens.length &&
+      state.tokens[state.pos + 1].kind === TK.Colon &&
+      !(state.pos + 2 < state.tokens.length && state.tokens[state.pos + 2].kind === TK.Colon)) {
+    const keyTok = advance(state)
+    const key: DWIdentifier = { kind: 'Identifier', name: keyTok.value }
+    expect(state, TK.Colon)
+    const value = parseExpression(state, 0, commentIdx)
+    const entry: DWObjectEntry = { kind: 'ObjectEntry', key, value, conditional: null, dynamic: false }
+    return { kind: 'ObjectExpr', entries: [entry] } as DWObjectExpr
+  }
+  return parseExpression(state, 0, commentIdx)
 }
 
 // ─── Using Expression ─────────────────────────────────────────────────────────

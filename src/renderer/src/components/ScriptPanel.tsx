@@ -6,7 +6,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useEditorStore } from '../store'
 import { Button } from './ui/button'
 import { DATAWEAVE_LANGUAGE_ID, dwLanguageConfig, dwMonarchTokens, registerDwCompletionProvider } from '../lib/dataweave-lang'
-import { formatDataWeave } from '../lib/dataweave-formatter-v2'
+import { formatDataWeave, formatDataWeaveRange } from '../lib/dataweave-formatter-v2'
 
 function registerDataWeaveLanguage(monaco: Monaco): void {
   if (monaco.languages.getLanguages().some((l) => l.id === DATAWEAVE_LANGUAGE_ID)) return
@@ -99,18 +99,75 @@ export function ScriptPanel(): React.JSX.Element {
     (ed: editor.IStandaloneCodeEditor, monaco: Monaco) => {
       monacoRef.current = monaco
       editorRef.current = ed
-      // Cmd+Shift+F / Ctrl+Shift+F to format DataWeave
+      // Shift+Alt+F via action (also in command palette)
       // eslint-disable-next-line no-bitwise
-      ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.KeyF, () => {
-        const model = ed.getModel()
-        if (!model) return
-        const formatted = formatDataWeave(model.getValue())
-        const fullRange = model.getFullModelRange()
-        ed.executeEdits('format', [{ range: fullRange, text: formatted }])
+      ed.addAction({
+        id: 'format-dataweave',
+        label: 'Format Document',
+        keybindings: [
+          monaco.KeyMod.Shift | monaco.KeyMod.Alt | monaco.KeyCode.KeyF,
+        ],
+        run: (e) => {
+          const model = e.getModel()
+          if (!model) return
+          const selection = e.getSelection()
+          const hasSelection = selection && !selection.isEmpty()
+
+          if (hasSelection) {
+            const result = formatDataWeaveRange(
+              model.getValue(),
+              selection.startLineNumber,
+              selection.endLineNumber,
+            )
+            if (result) {
+              const replaceRange = new monaco.Range(
+                result.startLine, 1,
+                result.endLine, model.getLineMaxColumn(result.endLine),
+              )
+              e.executeEdits('format', [{ range: replaceRange, text: result.text }])
+            }
+          } else {
+            const formatted = formatDataWeave(model.getValue())
+            const fullRange = model.getFullModelRange()
+            e.executeEdits('format', [{ range: fullRange, text: formatted }])
+          }
+        },
       })
     },
     []
   )
+
+  // Cmd+Shift+F via Electron main process (only act if this editor has focus)
+  useEffect(() => {
+    return window.api.onFormat(() => {
+      const ed = editorRef.current
+      const monaco = monacoRef.current
+      if (!ed || !monaco || !ed.hasWidgetFocus()) return
+      const model = ed.getModel()
+      if (!model) return
+      const selection = ed.getSelection()
+      const hasSelection = selection && !selection.isEmpty()
+
+      if (hasSelection) {
+        const result = formatDataWeaveRange(
+          model.getValue(),
+          selection.startLineNumber,
+          selection.endLineNumber,
+        )
+        if (result) {
+          const replaceRange = new monaco.Range(
+            result.startLine, 1,
+            result.endLine, model.getLineMaxColumn(result.endLine),
+          )
+          ed.executeEdits('format', [{ range: replaceRange, text: result.text }])
+        }
+      } else {
+        const formatted = formatDataWeave(model.getValue())
+        const fullRange = model.getFullModelRange()
+        ed.executeEdits('format', [{ range: fullRange, text: formatted }])
+      }
+    })
+  }, [])
 
   const handleChange = useCallback(
     (val: string | undefined) => {

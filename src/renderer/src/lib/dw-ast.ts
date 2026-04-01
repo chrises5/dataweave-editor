@@ -15,6 +15,7 @@ export interface DWParam {
   name: string
   typeAnnotation: string | null
   defaultValue?: string | null
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -26,6 +27,7 @@ export interface DWObjectEntry {
   conditional: DWNode | null
   dynamic: boolean
   spread?: boolean
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -35,6 +37,7 @@ export interface DWMatchCase {
   pattern: DWNode
   guard: DWNode | null
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -46,6 +49,7 @@ export interface DWDocument {
   header: DWHeader | null
   separator: boolean
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -53,6 +57,7 @@ export interface DWDocument {
 export interface DWHeader {
   kind: 'Header'
   directives: DWNode[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -62,6 +67,7 @@ export interface DWVarDirective {
   name: string
   typeAnnotation: string | null
   value: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -71,6 +77,7 @@ export interface DWFunDirective {
   name: string
   params: DWParam[]
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -80,6 +87,7 @@ export interface DWTypeDirective {
   kind: 'TypeDirective'
   name: string
   value: string
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -88,6 +96,7 @@ export interface DWNsDirective {
   kind: 'NsDirective'
   prefix: string
   uri: string
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -96,6 +105,7 @@ export interface DWNsDirective {
 export interface DWImportDirective {
   kind: 'ImportDirective'
   raw: string
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -104,6 +114,7 @@ export interface DWInputDirective {
   kind: 'InputDirective'
   name: string
   mimeType: string
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -112,6 +123,7 @@ export interface DWOutputDirective {
   kind: 'OutputDirective'
   mimeType: string
   properties: string[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -121,6 +133,7 @@ export interface DWIfExpr {
   cond: DWNode
   then: DWNode
   else_: DWNode | null
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -129,6 +142,7 @@ export interface DWMatchExpr {
   kind: 'MatchExpr'
   expr: DWNode
   cases: DWMatchCase[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -137,6 +151,7 @@ export interface DWDoExpr {
   kind: 'DoExpr'
   header: DWHeader
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -145,6 +160,7 @@ export interface DWUsingExpr {
   kind: 'UsingExpr'
   bindings: { name: string; value: DWNode }[]
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -153,6 +169,7 @@ export interface DWLambda {
   kind: 'Lambda'
   params: DWParam[]
   body: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -162,6 +179,7 @@ export interface DWBinaryExpr {
   op: string
   left: DWNode
   right: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -170,6 +188,7 @@ export interface DWUnaryExpr {
   kind: 'UnaryExpr'
   op: string
   operand: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -180,6 +199,7 @@ export interface DWSelectorExpr {
   selector: string
   selectorKind: 'dot' | 'dotdot' | 'bracket' | 'filter' | 'metadata'
   indexExpr?: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -188,6 +208,7 @@ export interface DWFunctionCall {
   kind: 'FunctionCall'
   callee: DWNode
   args: DWNode[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -195,6 +216,7 @@ export interface DWFunctionCall {
 export interface DWObjectExpr {
   kind: 'ObjectExpr'
   entries: DWObjectEntry[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -202,6 +224,7 @@ export interface DWObjectExpr {
 export interface DWArrayExpr {
   kind: 'ArrayExpr'
   elements: DWNode[]
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -209,6 +232,7 @@ export interface DWArrayExpr {
 export interface DWEnclosedExpr {
   kind: 'EnclosedExpr'
   expr: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -217,6 +241,7 @@ export interface DWLiteral {
   kind: 'Literal'
   value: string
   literalType: 'string' | 'number' | 'boolean' | 'null' | 'regex'
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -224,6 +249,7 @@ export interface DWLiteral {
 export interface DWIdentifier {
   kind: 'Identifier'
   name: string
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
@@ -233,6 +259,7 @@ export interface DWConditionalExpr {
   kind: 'ConditionalExpr'
   expr: DWNode
   condition: DWNode
+  blankLineBefore?: boolean
   leadingComments?: string[]
   trailingComments?: string[]
 }
