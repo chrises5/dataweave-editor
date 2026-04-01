@@ -24,6 +24,10 @@ export function ScriptPanel(): React.JSX.Element {
   const theme = useEditorStore((s) => s.theme)
   const autoRun = useEditorStore((s) => s.autoRun)
   const toggleAutoRun = useEditorStore((s) => s.toggleAutoRun)
+  const fontSize = useEditorStore((s) => s.fontSize)
+  const tabSize = useEditorStore((s) => s.tabSize)
+  const insertSpaces = useEditorStore((s) => s.insertSpaces)
+  const autoRunDelay = useEditorStore((s) => s.autoRunDelay)
   const inputNames = useEditorStore(
     useShallow((s) => s.sessions[s.activeSessionId]?.inputs.map((i) => i.name) ?? [])
   )
@@ -36,6 +40,10 @@ export function ScriptPanel(): React.JSX.Element {
   inputNamesRef.current = inputNames
   const autoRunRef = useRef(autoRun)
   autoRunRef.current = autoRun
+  const autoRunDelayRef = useRef(autoRunDelay)
+  autoRunDelayRef.current = autoRunDelay
+  const tabSizeRef = useRef(tabSize)
+  tabSizeRef.current = tabSize
 
   const runValidation = useCallback(async (value: string) => {
     const monaco = monacoRef.current
@@ -78,7 +86,7 @@ export function ScriptPanel(): React.JSX.Element {
       if (autoRunRef.current) {
         useEditorStore.getState().run({ silent: true })
       }
-    }, 1000)
+    }, autoRunDelayRef.current)
   }, [])
 
   // Validate on mount, session switch, or input name changes
@@ -118,6 +126,7 @@ export function ScriptPanel(): React.JSX.Element {
               model.getValue(),
               selection.startLineNumber,
               selection.endLineNumber,
+              { indentSize: tabSizeRef.current },
             )
             if (result) {
               const replaceRange = new monaco.Range(
@@ -127,7 +136,7 @@ export function ScriptPanel(): React.JSX.Element {
               e.executeEdits('format', [{ range: replaceRange, text: result.text }])
             }
           } else {
-            const formatted = formatDataWeave(model.getValue())
+            const formatted = formatDataWeave(model.getValue(), { indentSize: tabSizeRef.current })
             const fullRange = model.getFullModelRange()
             e.executeEdits('format', [{ range: fullRange, text: formatted }])
           }
@@ -153,6 +162,7 @@ export function ScriptPanel(): React.JSX.Element {
           model.getValue(),
           selection.startLineNumber,
           selection.endLineNumber,
+          { indentSize: tabSizeRef.current },
         )
         if (result) {
           const replaceRange = new monaco.Range(
@@ -162,7 +172,7 @@ export function ScriptPanel(): React.JSX.Element {
           ed.executeEdits('format', [{ range: replaceRange, text: result.text }])
         }
       } else {
-        const formatted = formatDataWeave(model.getValue())
+        const formatted = formatDataWeave(model.getValue(), { indentSize: tabSizeRef.current })
         const fullRange = model.getFullModelRange()
         ed.executeEdits('format', [{ range: fullRange, text: formatted }])
       }
@@ -215,11 +225,12 @@ export function ScriptPanel(): React.JSX.Element {
           options={{
             minimap: { enabled: false },
             automaticLayout: true,
-            fontSize: 12,
+            fontSize,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             scrollBeyondLastLine: false,
             wordWrap: 'on',
-            tabSize: 2,
+            tabSize,
+            insertSpaces,
           }}
         />
       </div>

@@ -78,6 +78,9 @@ const MIME_TO_LANGUAGE: Record<string, string> = {
 export function InputSlotComponent({ slot }: Props): React.JSX.Element {
   const updateInput = useEditorStore((s) => s.updateInput)
   const theme = useEditorStore((s) => s.theme)
+  const fontSize = useEditorStore((s) => s.fontSize)
+  const tabSize = useEditorStore((s) => s.tabSize)
+  const insertSpaces = useEditorStore((s) => s.insertSpaces)
   const [dragging, setDragging] = useState(false)
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null)
 
@@ -184,11 +187,12 @@ export function InputSlotComponent({ slot }: Props): React.JSX.Element {
           options={{
             minimap: { enabled: false },
             automaticLayout: true,
-            fontSize: 12,
+            fontSize,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             scrollBeyondLastLine: false,
             wordWrap: 'on',
-            tabSize: 2,
+            tabSize,
+            insertSpaces,
           }}
         />
       </div>

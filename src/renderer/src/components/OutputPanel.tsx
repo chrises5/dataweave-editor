@@ -30,6 +30,7 @@ export function OutputPanel(): React.JSX.Element {
   const logPanelOpen = useEditorStore((s) => s.sessions[s.activeSessionId]?.logPanelOpen ?? false)
   const toggleLogPanel = useEditorStore((s) => s.toggleLogPanel)
   const theme = useEditorStore((s) => s.theme)
+  const fontSize = useEditorStore((s) => s.fontSize)
 
   const displayValue = error ?? output
   const hasError = error !== null
@@ -52,7 +53,7 @@ export function OutputPanel(): React.JSX.Element {
             readOnly: true,
             automaticLayout: true,
             minimap: { enabled: false },
-            fontSize: 12,
+            fontSize,
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
             scrollBeyondLastLine: false,
             wordWrap: 'on',

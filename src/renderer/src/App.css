@@ -128,3 +128,16 @@
     @apply font-sans;
     }
 }
+
+/* Fix: Monaco find widget close button tooltip flicker (D-16) */
+.monaco-editor .find-widget .button.close-fw {
+  pointer-events: auto;
+}
+.monaco-editor .find-widget .button.close-fw[title] {
+  position: relative;
+}
+.monaco-editor .find-widget .button.close-fw::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
