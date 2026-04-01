@@ -56,4 +56,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('shortcut:format', listener)
     return (): void => { ipcRenderer.removeListener('shortcut:format', listener) }
   },
+  // Settings persistence (D-18)
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  setSettings: (patch: Record<string, unknown>) => ipcRenderer.invoke('settings:set', patch),
+  // Font size shortcuts from main process (D-15)
+  onFontSizeChange: (cb: (action: string) => void) => {
+    const listener = (_e: unknown, action: string): void => cb(action)
+    ipcRenderer.on('shortcut:fontsize', listener)
+    return (): void => { ipcRenderer.removeListener('shortcut:fontsize', listener) }
+  },
 })

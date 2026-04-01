@@ -47,6 +47,26 @@ const themeStore = new Conf<{ theme: 'light' | 'dark' }>({
   defaults: { theme: 'light' },
 })
 
+// Settings persistence (D-17)
+interface PersistedSettings {
+  fontSize: number
+  tabSize: number
+  insertSpaces: boolean
+  autoRunDelay: number
+}
+
+const DEFAULT_SETTINGS: PersistedSettings = {
+  fontSize: 12,
+  tabSize: 2,
+  insertSpaces: true,
+  autoRunDelay: 1000,
+}
+
+const settingsStore = new Conf<PersistedSettings>({
+  name: 'settings',
+  defaults: DEFAULT_SETTINGS,
+})
+
 // Register IPC handlers before app.whenReady() to avoid race conditions
 ipcMain.handle('dw:execute', async (_event, payload: ExecutePayload) => {
   return executeDw(payload)
@@ -85,6 +105,14 @@ ipcMain.handle('theme:get', () => themeStore.get('theme'))
 
 ipcMain.handle('theme:set', (_e, theme: 'light' | 'dark') => {
   themeStore.set('theme', theme)
+})
+
+// Settings IPC (D-18)
+ipcMain.handle('settings:get', () => settingsStore.store)
+ipcMain.handle('settings:set', (_e, patch: Partial<PersistedSettings>) => {
+  for (const [key, value] of Object.entries(patch)) {
+    settingsStore.set(key as keyof PersistedSettings, value)
+  }
 })
 
 ipcMain.handle('dialog:openFile', async () => {
@@ -142,6 +170,18 @@ function createWindow(): void {
       mainWindow.webContents.send('shortcut:format')
     } else if (mod && input.shift && input.key === 'D') {
       mainWindow.webContents.send('theme:toggle')
+    } else if (mod && input.shift && (input.key === 'i' || input.key === 'I')) {
+      // D-14: Ctrl+Shift+I / Cmd+Shift+I — IntelliJ format shortcut
+      mainWindow.webContents.send('shortcut:format')
+    } else if (mod && !input.shift && (input.key === '=' || input.key === '+')) {
+      // D-15: Cmd/Ctrl+= — increase font size
+      mainWindow.webContents.send('shortcut:fontsize', 'increase')
+    } else if (mod && !input.shift && input.key === '-') {
+      // D-15: Cmd/Ctrl+- — decrease font size
+      mainWindow.webContents.send('shortcut:fontsize', 'decrease')
+    } else if (mod && !input.shift && input.key === '0') {
+      // D-15: Cmd/Ctrl+0 — reset font size to default (12)
+      mainWindow.webContents.send('shortcut:fontsize', 'reset')
     } else if (mod && !input.shift && input.key >= '1' && input.key <= '9') {
       mainWindow.webContents.send('tab:switch', parseInt(input.key) - 1)
     } else {
@@ -180,6 +220,28 @@ function createWindow(): void {
           accelerator: 'CommandOrControl+Shift+D',
           click: (_menuItem, browserWindow) => {
             ;(browserWindow as BrowserWindow | null)?.webContents.send('theme:toggle')
+          }
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Increase Font Size',
+          accelerator: 'CommandOrControl+=',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:fontsize', 'increase')
+          }
+        },
+        {
+          label: 'Decrease Font Size',
+          accelerator: 'CommandOrControl+-',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:fontsize', 'decrease')
+          }
+        },
+        {
+          label: 'Reset Font Size',
+          accelerator: 'CommandOrControl+0',
+          click: (_menuItem, browserWindow) => {
+            ;(browserWindow as BrowserWindow | null)?.webContents.send('shortcut:fontsize', 'reset')
           }
         }
       ]

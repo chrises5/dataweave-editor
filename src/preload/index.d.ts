@@ -68,6 +68,13 @@ export interface ElectronAPI {
   getTheme: () => Promise<'light' | 'dark'>
   setTheme: (theme: 'light' | 'dark') => Promise<void>
   onThemeToggle: (cb: () => void) => () => void
+  // Format shortcut
+  onFormat: (cb: () => void) => () => void
+  // Settings persistence (D-18)
+  getSettings: () => Promise<{ fontSize: number; tabSize: number; insertSpaces: boolean; autoRunDelay: number }>
+  setSettings: (patch: Record<string, unknown>) => Promise<void>
+  // Font size shortcuts (D-15)
+  onFontSizeChange: (cb: (action: string) => void) => () => void
 }
 
 declare global {
